@@ -14,16 +14,152 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bookings: {
+        Row: {
+          created_at: string
+          description: string
+          email: string
+          full_name: string
+          id: string
+          phone: string
+          preferred_date: string | null
+          service: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          email: string
+          full_name: string
+          id?: string
+          phone: string
+          preferred_date?: string | null
+          service: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          email?: string
+          full_name?: string
+          id?: string
+          phone?: string
+          preferred_date?: string | null
+          service?: string
+          status?: string
+        }
+        Relationships: []
+      }
+      portfolio_items: {
+        Row: {
+          category: Database["public"]["Enums"]["media_category"]
+          created_at: string
+          description: string | null
+          file_url: string
+          id: string
+          mime_type: string | null
+          size_bytes: number | null
+          sort_order: number
+          storage_path: string
+          title: string | null
+          type: Database["public"]["Enums"]["media_type"]
+        }
+        Insert: {
+          category: Database["public"]["Enums"]["media_category"]
+          created_at?: string
+          description?: string | null
+          file_url: string
+          id?: string
+          mime_type?: string | null
+          size_bytes?: number | null
+          sort_order?: number
+          storage_path: string
+          title?: string | null
+          type: Database["public"]["Enums"]["media_type"]
+        }
+        Update: {
+          category?: Database["public"]["Enums"]["media_category"]
+          created_at?: string
+          description?: string | null
+          file_url?: string
+          id?: string
+          mime_type?: string | null
+          size_bytes?: number | null
+          sort_order?: number
+          storage_path?: string
+          title?: string | null
+          type?: Database["public"]["Enums"]["media_type"]
+        }
+        Relationships: []
+      }
+      social_links: {
+        Row: {
+          id: string
+          is_visible: boolean
+          label: string
+          platform: string
+          sort_order: number
+          updated_at: string
+          url: string
+        }
+        Insert: {
+          id?: string
+          is_visible?: boolean
+          label: string
+          platform: string
+          sort_order?: number
+          updated_at?: string
+          url?: string
+        }
+        Update: {
+          id?: string
+          is_visible?: boolean
+          label?: string
+          platform?: string
+          sort_order?: number
+          updated_at?: string
+          url?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
+      media_category: "audio" | "video" | "graphics" | "photography"
+      media_type: "image" | "video" | "audio"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +286,10 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+      media_category: ["audio", "video", "graphics", "photography"],
+      media_type: ["image", "video", "audio"],
+    },
   },
 } as const
