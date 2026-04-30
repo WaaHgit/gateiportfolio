@@ -34,9 +34,10 @@ export function SocialIcons({ size = 20 }: { size?: number }) {
       {links.map((l) => {
         const Icon = ICONS[l.platform] ?? Globe;
         const isWhats = l.platform === "whatsapp";
-        const href = isWhats && l.url && !l.url.startsWith("http") && !l.url.startsWith("#")
+        const rawHref = isWhats && l.url && !l.url.startsWith("http") && !l.url.startsWith("#")
           ? `https://wa.me/${l.url.replace(/[^\d]/g, "")}`
           : l.url;
+        const href = safeHref(rawHref);
         return (
           <li key={l.platform}>
             <a
