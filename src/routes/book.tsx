@@ -40,9 +40,23 @@ function BookPage() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
 
+  const [mountedAt] = useState(() => Date.now());
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
+
+    // Honeypot: real users won't fill the hidden "website" field.
+    if ((form.get("website") as string)?.trim()) {
+      setDone(true); // pretend success to bots
+      return;
+    }
+    // Time trap: forms submitted in <2s are almost certainly bots.
+    if (Date.now() - mountedAt < 2000) {
+      toast.error("Please take a moment to review your details.");
+      return;
+    }
+
     const raw = {
       full_name: form.get("full_name") as string,
       email: form.get("email") as string,
