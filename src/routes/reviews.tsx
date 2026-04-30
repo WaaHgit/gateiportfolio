@@ -103,9 +103,6 @@ function ReviewsPage() {
 
       <div className="mt-20 border-t border-border pt-12">
         <h2 className="font-display text-3xl">Leave a review</h2>
-        <p className="text-sm text-muted-foreground mt-2">
-          Your review will appear after admin approval.
-        </p>
         <ReviewForm onSubmitted={load} />
       </div>
     </section>
@@ -211,7 +208,7 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
       </label>
       <label className="block">
         <span className="uppercase-tracked text-xs text-muted-foreground">
-          Email (optional — for your Google profile photo, sign in below)
+          Email (optional)
         </span>
         <input
           type="email"
