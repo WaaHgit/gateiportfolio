@@ -1,6 +1,7 @@
 import { createServerFn, createMiddleware } from "@tanstack/react-start";
 import { supabase as browserSupabase } from "@/integrations/supabase/client";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const attachAuthHeader = createMiddleware({ type: "function" }).client(async ({ next }) => {
   const { data } = await browserSupabase.auth.getSession();
@@ -13,18 +14,28 @@ const attachAuthHeader = createMiddleware({ type: "function" }).client(async ({ 
 export const getAdminStatus = createServerFn({ method: "GET" })
   .middleware([attachAuthHeader, requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context;
+    const { userId } = context;
 
-    const { data, error } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId)
-      .eq("role", "admin")
-      .maybeSingle();
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .eq("role", "admin")
+        .maybeSingle();
 
-    if (error) {
-      throw new Error(error.message);
+      if (error) {
+        console.error("Admin status lookup failed", {
+          userId,
+          code: error.code,
+          message: error.message,
+        });
+        return { admin: false, error: "Unable to verify admin access right now." };
+      }
+
+      return { admin: !!data, error: null };
+    } catch (error) {
+      console.error("Unexpected admin status error", error);
+      return { admin: false, error: "Unable to verify admin access right now." };
     }
-
-    return { admin: !!data };
   });

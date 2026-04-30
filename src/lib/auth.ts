@@ -22,6 +22,9 @@ export function useSession() {
 
 export async function isAdmin(userId: string): Promise<boolean> {
   const result = await getAdminStatus({ data: undefined });
+  if (result.error) {
+    throw new Error(result.error);
+  }
   return result.admin && !!userId;
 }
 
