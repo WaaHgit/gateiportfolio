@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Headphones, X } from "lucide-react";
+import { FadeInOnScroll } from "@/components/FadeInOnScroll";
+import { MediaVideo } from "@/components/MediaVideo";
 
 export const Route = createFileRoute("/portfolio")({
   head: () => ({
@@ -66,29 +68,39 @@ function PortfolioPage() {
       {filtered.length === 0 ? (
         <p className="text-muted-foreground mt-16 text-sm">No items in this category yet.</p>
       ) : (
-        <div className="mt-8 grid grid-cols-2 md:grid-cols-3 gap-2">
-          {filtered.map((it) => (
-            <button
-              key={it.id}
-              onClick={() => setActive(it)}
-              className="group relative aspect-square overflow-hidden border border-border bg-card text-left"
-            >
-              {it.type === "image" && (
-                <img src={it.file_url} alt={it.title ?? ""} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
-              )}
-              {it.type === "video" && (
-                <video src={it.file_url} muted playsInline loop autoPlay className="w-full h-full object-cover" />
-              )}
-              {it.type === "audio" && (
-                <div className="w-full h-full flex flex-col items-center justify-center bg-secondary gap-2">
-                  <Headphones size={36} className="text-primary" />
-                  <span className="text-xs uppercase-tracked text-muted-foreground">{it.title ?? "Audio"}</span>
-                </div>
-              )}
-              <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                <span className="font-display text-lg text-white">{it.title ?? ""}</span>
-              </div>
-            </button>
+        <div className="mt-8 columns-2 md:columns-3 lg:columns-4 gap-3 [column-fill:_balance]">
+          {filtered.map((it, idx) => (
+            <FadeInOnScroll key={it.id} delay={Math.min(idx * 40, 300)} className="mb-3 break-inside-avoid">
+              <button
+                onClick={() => setActive(it)}
+                className="group relative w-full overflow-hidden border border-border bg-card text-left block"
+              >
+                {it.type === "image" && (
+                  <img
+                    src={it.file_url}
+                    alt={it.title ?? ""}
+                    loading="lazy"
+                    className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-700"
+                  />
+                )}
+                {it.type === "video" && (
+                  <div className="aspect-video">
+                    <MediaVideo src={it.file_url} autoPreview className="w-full h-full" />
+                  </div>
+                )}
+                {it.type === "audio" && (
+                  <div className="aspect-square w-full flex flex-col items-center justify-center bg-secondary gap-2">
+                    <Headphones size={36} className="text-primary" />
+                    <span className="text-xs uppercase-tracked text-muted-foreground">{it.title ?? "Audio"}</span>
+                  </div>
+                )}
+                {it.title && (
+                  <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="font-display text-lg text-white">{it.title}</span>
+                  </div>
+                )}
+              </button>
+            </FadeInOnScroll>
           ))}
         </div>
       )}
@@ -109,7 +121,11 @@ function Lightbox({ item, onClose }: { item: Item; onClose: () => void }) {
       <button className="absolute top-4 right-4 text-white" onClick={onClose} aria-label="Close"><X size={28} /></button>
       <div className="max-w-6xl w-full max-h-[90vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
         {item.type === "image" && <img src={item.file_url} alt={item.title ?? ""} className="max-h-[80vh] w-auto object-contain" />}
-        {item.type === "video" && <video src={item.file_url} controls autoPlay className="max-h-[80vh] w-auto" />}
+        {item.type === "video" && (
+          <div className="w-full max-w-5xl aspect-video">
+            <MediaVideo src={item.file_url} className="w-full h-full" />
+          </div>
+        )}
         {item.type === "audio" && (
           <div className="w-full max-w-2xl bg-card p-8 border border-border">
             <Headphones size={40} className="text-primary mb-4" />

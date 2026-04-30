@@ -78,6 +78,7 @@ export type Database = {
           mime_type: string | null
           size_bytes: number | null
           sort_order: number
+          status: string
           storage_path: string
           title: string | null
           type: Database["public"]["Enums"]["media_type"]
@@ -91,6 +92,7 @@ export type Database = {
           mime_type?: string | null
           size_bytes?: number | null
           sort_order?: number
+          status?: string
           storage_path: string
           title?: string | null
           type: Database["public"]["Enums"]["media_type"]
@@ -104,9 +106,43 @@ export type Database = {
           mime_type?: string | null
           size_bytes?: number | null
           sort_order?: number
+          status?: string
           storage_path?: string
           title?: string | null
           type?: Database["public"]["Enums"]["media_type"]
+        }
+        Relationships: []
+      }
+      reviews: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string | null
+          id: string
+          message: string
+          name: string
+          rating: number
+          status: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          message: string
+          name: string
+          rating: number
+          status?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          message?: string
+          name?: string
+          rating?: number
+          status?: string
         }
         Relationships: []
       }
