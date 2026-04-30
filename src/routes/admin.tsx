@@ -116,6 +116,17 @@ function Center({ children }: { children: React.ReactNode }) {
 }
 
 /* ============== UPLOAD ============== */
+type RecentItem = {
+  id: string;
+  file_url: string;
+  storage_path: string;
+  type: "image" | "video" | "audio";
+  category: string;
+  title: string | null;
+  status: "draft" | "published";
+  mime_type: string | null;
+};
+
 function UploadPanel() {
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -123,7 +134,10 @@ function UploadPanel() {
   const [category, setCategory] = useState<"audio" | "video" | "graphics" | "photography">("photography");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [recent, setRecent] = useState<RecentItem[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const replaceRef = useRef<HTMLInputElement>(null);
+  const replacingId = useRef<string | null>(null);
 
   function detectType(file: File): "image" | "video" | "audio" | null {
     if (file.type.startsWith("image/")) return "image";
@@ -131,6 +145,16 @@ function UploadPanel() {
     if (file.type.startsWith("audio/")) return "audio";
     return null;
   }
+
+  async function loadRecent() {
+    const { data } = await supabase
+      .from("portfolio_items")
+      .select("id,file_url,storage_path,type,category,title,status,mime_type")
+      .order("created_at", { ascending: false })
+      .limit(24);
+    setRecent((data as RecentItem[]) ?? []);
+  }
+  useEffect(() => { loadRecent(); }, []);
 
   async function handleFiles(files: FileList | File[]) {
     const arr = Array.from(files);
@@ -146,7 +170,6 @@ function UploadPanel() {
       }
       const ext = file.name.split(".").pop() ?? "bin";
       const path = `${type}/${crypto.randomUUID()}.${ext}`;
-      // Upload original — no compression, no transforms
       const { error: upErr } = await supabase.storage
         .from("media")
         .upload(path, file, { contentType: file.type, cacheControl: "31536000", upsert: false });
@@ -164,6 +187,7 @@ function UploadPanel() {
         description: description || null,
         mime_type: file.type,
         size_bytes: file.size,
+        status: "draft",
       });
       if (insErr) {
         toast.error(`${file.name}: ${insErr.message}`);
@@ -171,74 +195,148 @@ function UploadPanel() {
       setProgress((p) => p.map((row, idx) => (idx === i ? { ...row, done: true } : row)));
     }
     setBusy(false);
-    toast.success("Upload complete");
+    toast.success("Uploaded as drafts — click Publish to make them live");
     setTimeout(() => setProgress([]), 2500);
+    loadRecent();
+  }
+
+  async function setStatus(id: string, status: "draft" | "published") {
+    const { error } = await supabase.from("portfolio_items").update({ status }).eq("id", id);
+    if (error) toast.error(error.message);
+    else { toast.success(status === "published" ? "Published" : "Saved as draft"); loadRecent(); }
+  }
+  async function del(it: RecentItem) {
+    if (!confirm("Delete this item permanently?")) return;
+    await supabase.storage.from("media").remove([it.storage_path]);
+    const { error } = await supabase.from("portfolio_items").delete().eq("id", it.id);
+    if (error) toast.error(error.message);
+    else { toast.success("Deleted"); loadRecent(); }
+  }
+  function startReplace(id: string) {
+    replacingId.current = id;
+    replaceRef.current?.click();
+  }
+  async function handleReplace(file: File) {
+    const id = replacingId.current;
+    if (!id) return;
+    const type = detectType(file);
+    if (!type) { toast.error("Unsupported file type"); return; }
+    const target = recent.find((r) => r.id === id);
+    if (!target) return;
+    const ext = file.name.split(".").pop() ?? "bin";
+    const path = `${type}/${crypto.randomUUID()}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("media").upload(path, file, { contentType: file.type, cacheControl: "31536000", upsert: false });
+    if (upErr) { toast.error(upErr.message); return; }
+    const { data: pub } = supabase.storage.from("media").getPublicUrl(path);
+    const { error } = await supabase.from("portfolio_items").update({
+      file_url: pub.publicUrl, storage_path: path, type, mime_type: file.type, size_bytes: file.size,
+    }).eq("id", id);
+    if (error) { toast.error(error.message); return; }
+    await supabase.storage.from("media").remove([target.storage_path]);
+    toast.success("Replaced");
+    replacingId.current = null;
+    loadRecent();
   }
 
   return (
-    <div className="grid lg:grid-cols-[1fr_320px] gap-8">
-      <div
-        onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-        onDragLeave={() => setDrag(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDrag(false);
-          handleFiles(e.dataTransfer.files);
-        }}
-        onClick={() => inputRef.current?.click()}
-        className={`border-2 border-dashed ${drag ? "border-primary bg-card" : "border-border"} rounded-md p-16 text-center cursor-pointer transition-colors`}
-      >
-        <UploadCloud className="mx-auto text-primary" size={40} />
-        <p className="mt-4 font-display text-2xl">Drop media here</p>
-        <p className="text-sm text-muted-foreground mt-2">
-          Images · Video · Audio — any size, original quality, no compression.
-        </p>
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          accept="image/*,video/*,audio/*"
-          className="hidden"
-          onChange={(e) => e.target.files && handleFiles(e.target.files)}
-        />
-        {progress.length > 0 && (
-          <ul className="mt-8 space-y-2 text-left text-sm max-w-md mx-auto">
-            {progress.map((p) => (
-              <li key={p.name} className="flex items-center gap-2 text-muted-foreground">
-                {p.done ? <span className="text-primary">✓</span> : <Loader2 className="animate-spin" size={14} />}
-                <span className="truncate">{p.name}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+    <div className="space-y-10">
+      <div className="grid lg:grid-cols-[1fr_320px] gap-8">
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={(e) => { e.preventDefault(); setDrag(false); handleFiles(e.dataTransfer.files); }}
+          onClick={() => inputRef.current?.click()}
+          className={`border-2 border-dashed ${drag ? "border-primary bg-card" : "border-border"} rounded-md p-16 text-center cursor-pointer transition-colors`}
+        >
+          <UploadCloud className="mx-auto text-primary" size={40} />
+          <p className="mt-4 font-display text-2xl">Drop media here</p>
+          <p className="text-sm text-muted-foreground mt-2">
+            Images · Video · Audio — any size, original quality, no compression. Uploaded as drafts.
+          </p>
+          <input ref={inputRef} type="file" multiple accept="image/*,video/*,audio/*" className="hidden"
+            onChange={(e) => e.target.files && handleFiles(e.target.files)} />
+          <input ref={replaceRef} type="file" accept="image/*,video/*,audio/*" className="hidden"
+            onChange={(e) => e.target.files?.[0] && handleReplace(e.target.files[0])} />
+          {progress.length > 0 && (
+            <ul className="mt-8 space-y-2 text-left text-sm max-w-md mx-auto">
+              {progress.map((p) => (
+                <li key={p.name} className="flex items-center gap-2 text-muted-foreground">
+                  {p.done ? <span className="text-primary">✓</span> : <Loader2 className="animate-spin" size={14} />}
+                  <span className="truncate">{p.name}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <aside className="space-y-5 bg-card border border-border p-6">
+          <h3 className="font-display text-xl">Defaults for upload</h3>
+          <label className="block">
+            <span className="uppercase-tracked text-muted-foreground">Category</span>
+            <select value={category} onChange={(e) => setCategory(e.target.value as never)}
+              className="mt-2 w-full bg-background border border-border focus:border-primary outline-none py-2 px-3">
+              <option value="photography">Photography</option>
+              <option value="video">Video</option>
+              <option value="audio">Audio</option>
+              <option value="graphics">Graphics</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="uppercase-tracked text-muted-foreground">Title (optional)</span>
+            <input value={title} onChange={(e) => setTitle(e.target.value)}
+              className="mt-2 w-full bg-transparent border-b border-border focus:border-primary outline-none py-2" />
+          </label>
+          <label className="block">
+            <span className="uppercase-tracked text-muted-foreground">Description (optional)</span>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
+              className="mt-2 w-full bg-background border border-border focus:border-primary outline-none p-2" />
+          </label>
+          <p className="text-xs text-muted-foreground">Defaults applied to every file in the next batch.</p>
+          {busy && <p className="text-xs text-primary">Uploading…</p>}
+        </aside>
       </div>
 
-      <aside className="space-y-5 bg-card border border-border p-6">
-        <h3 className="font-display text-xl">Defaults for upload</h3>
-        <label className="block">
-          <span className="uppercase-tracked text-muted-foreground">Category</span>
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value as never)}
-            className="mt-2 w-full bg-background border border-border focus:border-primary outline-none py-2 px-3"
-          >
-            <option value="photography">Photography</option>
-            <option value="video">Video</option>
-            <option value="audio">Audio</option>
-            <option value="graphics">Graphics</option>
-          </select>
-        </label>
-        <label className="block">
-          <span className="uppercase-tracked text-muted-foreground">Title (optional)</span>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} className="mt-2 w-full bg-transparent border-b border-border focus:border-primary outline-none py-2" />
-        </label>
-        <label className="block">
-          <span className="uppercase-tracked text-muted-foreground">Description (optional)</span>
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="mt-2 w-full bg-background border border-border focus:border-primary outline-none p-2" />
-        </label>
-        <p className="text-xs text-muted-foreground">Defaults applied to every file in the next batch.</p>
-        {busy && <p className="text-xs text-primary">Uploading…</p>}
-      </aside>
+      {/* Recent uploads preview */}
+      <div>
+        <div className="flex items-center justify-between border-b border-border pb-2 mb-4">
+          <h3 className="font-display text-xl">Recent uploads</h3>
+          <button onClick={loadRecent} className="uppercase-tracked text-xs text-muted-foreground hover:text-primary">Refresh</button>
+        </div>
+        {recent.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nothing yet. Drop files above to get started.</p>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {recent.map((it) => (
+              <div key={it.id} className="border border-border bg-card flex flex-col">
+                <div className="aspect-square w-full overflow-hidden bg-secondary flex items-center justify-center">
+                  {it.type === "image" && <img src={it.file_url} alt={it.title ?? ""} className="w-full h-full object-cover" />}
+                  {it.type === "video" && <video src={it.file_url} muted playsInline className="w-full h-full object-cover" />}
+                  {it.type === "audio" && <span className="text-primary uppercase-tracked text-xs">AUDIO</span>}
+                </div>
+                <div className="p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs truncate flex-1">{it.title ?? "—"}</span>
+                    <span className={`text-[10px] uppercase-tracked px-2 py-0.5 ${it.status === "published" ? "bg-primary/20 text-primary" : "bg-secondary text-muted-foreground"}`}>
+                      {it.status}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {it.status === "draft" ? (
+                      <button onClick={() => setStatus(it.id, "published")} className="text-[11px] uppercase-tracked bg-primary text-primary-foreground px-2 py-1">Publish</button>
+                    ) : (
+                      <button onClick={() => setStatus(it.id, "draft")} className="text-[11px] uppercase-tracked border border-border px-2 py-1 hover:border-primary">Unpublish</button>
+                    )}
+                    <button onClick={() => startReplace(it.id)} className="text-[11px] uppercase-tracked border border-border px-2 py-1 hover:border-primary">Replace</button>
+                    <button onClick={() => del(it)} className="text-[11px] uppercase-tracked text-muted-foreground hover:text-destructive p-1 ml-auto">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
