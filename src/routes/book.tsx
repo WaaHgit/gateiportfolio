@@ -40,9 +40,23 @@ function BookPage() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
 
+  const [mountedAt] = useState(() => Date.now());
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
+
+    // Honeypot: real users won't fill the hidden "website" field.
+    if ((form.get("website") as string)?.trim()) {
+      setDone(true); // pretend success to bots
+      return;
+    }
+    // Time trap: forms submitted in <2s are almost certainly bots.
+    if (Date.now() - mountedAt < 2000) {
+      toast.error("Please take a moment to review your details.");
+      return;
+    }
+
     const raw = {
       full_name: form.get("full_name") as string,
       email: form.get("email") as string,
@@ -88,6 +102,13 @@ function BookPage() {
       </p>
 
       <form onSubmit={onSubmit} className="mt-12 max-w-2xl space-y-6">
+        {/* Honeypot — hidden from users; bots auto-fill it and get rejected */}
+        <div aria-hidden="true" style={{ position: "absolute", left: "-10000px", width: 1, height: 1, overflow: "hidden" }}>
+          <label>
+            Website
+            <input type="text" name="website" tabIndex={-1} autoComplete="off" />
+          </label>
+        </div>
         <Field label="Full name" name="full_name" required />
         <div className="grid sm:grid-cols-2 gap-6">
           <Field label="Email" name="email" type="email" required />
