@@ -93,34 +93,59 @@ function Center({ children }: { children: React.ReactNode }) {
 }
 
 /* ============== UPLOAD ============== */
+type UploadCategory = "audio" | "video" | "graphics" | "photography";
+type MediaKind = "image" | "video" | "audio";
+
 type RecentItem = {
   id: string;
   file_url: string;
   storage_path: string;
-  type: "image" | "video" | "audio";
+  type: MediaKind;
   category: string;
   title: string | null;
   status: "draft" | "published";
   mime_type: string | null;
 };
 
+type StagedItem = {
+  id: string;
+  file: File;
+  previewUrl: string | null;
+  type: MediaKind;
+  category: UploadCategory;
+  title: string;
+  description: string;
+  uploading: boolean;
+};
+
 function UploadPanel() {
   const [drag, setDrag] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState<{ name: string; done: boolean }[]>([]);
-  const [category, setCategory] = useState<"audio" | "video" | "graphics" | "photography">("photography");
+  const [category, setCategory] = useState<UploadCategory>("photography");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [recent, setRecent] = useState<RecentItem[]>([]);
+  const [staged, setStaged] = useState<StagedItem[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
   const replacingId = useRef<string | null>(null);
+  const stagedRef = useRef<StagedItem[]>([]);
 
-  function detectType(file: File): "image" | "video" | "audio" | null {
+  function detectType(file: File): MediaKind | null {
     if (file.type.startsWith("image/")) return "image";
     if (file.type.startsWith("video/")) return "video";
     if (file.type.startsWith("audio/")) return "audio";
     return null;
+  }
+
+  function baseTitle(name: string) {
+    return name.replace(/\.[^.]+$/, "");
+  }
+
+  function formatBytes(bytes: number) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   }
 
   async function loadRecent() {
@@ -133,33 +158,118 @@ function UploadPanel() {
   }
   useEffect(() => { loadRecent(); }, []);
 
-  async function handleFiles(files: FileList | File[]) {
+  useEffect(() => {
+    stagedRef.current = staged;
+  }, [staged]);
+
+  useEffect(() => {
+    return () => {
+      stagedRef.current.forEach((item) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+    };
+  }, []);
+
+  function queueFiles(files: FileList | File[]) {
     const arr = Array.from(files);
     if (arr.length === 0) return;
-    setBusy(true);
-    setProgress(arr.map((f) => ({ name: f.name, done: false })));
-    for (let i = 0; i < arr.length; i++) {
-      const file = arr[i];
+    const created: StagedItem[] = [];
+    for (const file of arr) {
       const type = detectType(file);
-      if (!type) { toast.error(`${file.name}: unsupported file type`); continue; }
-      const ext = file.name.split(".").pop() ?? "bin";
-      const path = `${type}/${crypto.randomUUID()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from("media").upload(path, file, { contentType: file.type, cacheControl: "31536000", upsert: false });
-      if (upErr) { toast.error(`${file.name}: ${upErr.message}`); continue; }
-      const { data: pub } = supabase.storage.from("media").getPublicUrl(path);
-      const { error: insErr } = await supabase.from("portfolio_items").insert({
-        file_url: pub.publicUrl, storage_path: path, type, category,
-        title: title || file.name.replace(/\.[^.]+$/, ""),
-        description: description || null, mime_type: file.type, size_bytes: file.size,
-        status: "draft",
+      if (!type) {
+        toast.error(`${file.name}: unsupported file type`);
+        continue;
+      }
+      created.push({
+        id: crypto.randomUUID(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+        type,
+        category,
+        title: title || baseTitle(file.name),
+        description,
+        uploading: false,
       });
-      if (insErr) toast.error(`${file.name}: ${insErr.message}`);
-      setProgress((p) => p.map((row, idx) => (idx === i ? { ...row, done: true } : row)));
     }
-    setBusy(false);
-    toast.success("Uploaded as drafts — click Publish to make them live");
-    setTimeout(() => setProgress([]), 2500);
-    loadRecent();
+    if (created.length === 0) return;
+    setStaged((prev) => [...created, ...prev]);
+    toast.success("Preview ready — add details, then save draft or upload");
+  }
+
+  function updateStaged(id: string, patch: Partial<Pick<StagedItem, "title" | "description" | "category">>) {
+    setStaged((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }
+
+  function removeStaged(id: string) {
+    setStaged((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((item) => item.id !== id);
+    });
+  }
+
+  async function uploadStaged(item: StagedItem, status: "draft" | "published", showToast = true) {
+    setStaged((prev) => prev.map((entry) => (entry.id === item.id ? { ...entry, uploading: true } : entry)));
+
+    try {
+      const ext = item.file.name.split(".").pop() ?? "bin";
+      const path = `${item.type}/${crypto.randomUUID()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from("media").upload(path, item.file, {
+        contentType: item.file.type,
+        cacheControl: "31536000",
+        upsert: false,
+      });
+      if (uploadError) throw uploadError;
+
+      const { data: pub } = supabase.storage.from("media").getPublicUrl(path);
+      const { error: insertError } = await supabase.from("portfolio_items").insert({
+        file_url: pub.publicUrl,
+        storage_path: path,
+        type: item.type,
+        category: item.category,
+        title: item.title || baseTitle(item.file.name),
+        description: item.description || null,
+        mime_type: item.file.type,
+        size_bytes: item.file.size,
+        status,
+      });
+      if (insertError) throw insertError;
+
+      removeStaged(item.id);
+      await loadRecent();
+      if (showToast) toast.success(status === "published" ? "Uploaded to the website" : "Saved as draft");
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Upload failed";
+      toast.error(message);
+      setStaged((prev) => prev.map((entry) => (entry.id === item.id ? { ...entry, uploading: false } : entry)));
+      return false;
+    }
+  }
+
+  async function uploadAll(status: "draft" | "published") {
+    const items = staged.filter((item) => !item.uploading);
+    if (items.length === 0) {
+      toast.error("No queued media to upload");
+      return;
+    }
+
+    let success = 0;
+    let failed = 0;
+    for (const item of items) {
+      const ok = await uploadStaged(item, status, false);
+      if (ok) success += 1;
+      else failed += 1;
+    }
+
+    if (success > 0) {
+      toast.success(
+        status === "published"
+          ? `${success} item${success > 1 ? "s" : ""} uploaded to the website`
+          : `${success} item${success > 1 ? "s" : ""} saved as drafts`
+      );
+    }
+    if (failed > 0) toast.error(`${failed} item${failed > 1 ? "s" : ""} failed to upload`);
   }
 
   async function setStatus(id: string, status: "draft" | "published") {
@@ -206,29 +316,26 @@ function UploadPanel() {
         <div
           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
           onDragLeave={() => setDrag(false)}
-          onDrop={(e) => { e.preventDefault(); setDrag(false); handleFiles(e.dataTransfer.files); }}
+          onDrop={(e) => { e.preventDefault(); setDrag(false); queueFiles(e.dataTransfer.files); }}
           onClick={() => inputRef.current?.click()}
           className={`border-2 border-dashed ${drag ? "border-primary bg-card" : "border-border"} rounded-md p-16 text-center cursor-pointer transition-colors`}
         >
           <UploadCloud className="mx-auto text-primary" size={40} />
           <p className="mt-4 font-display text-2xl">Drop media here</p>
           <p className="text-sm text-muted-foreground mt-2">
-            Images · Video · Audio — any size, original quality, no compression. Uploaded as drafts.
+            Images · Video · Audio — any size, original quality, no compression.
           </p>
+          <p className="text-xs text-muted-foreground mt-3">Nothing uploads until you press Save draft or Upload.</p>
           <input ref={inputRef} type="file" multiple accept="image/*,video/*,audio/*" className="hidden"
-            onChange={(e) => e.target.files && handleFiles(e.target.files)} />
+            onChange={(e) => {
+              if (e.target.files) queueFiles(e.target.files);
+              e.target.value = "";
+            }} />
           <input ref={replaceRef} type="file" accept="image/*,video/*,audio/*" className="hidden"
-            onChange={(e) => e.target.files?.[0] && handleReplace(e.target.files[0])} />
-          {progress.length > 0 && (
-            <ul className="mt-8 space-y-2 text-left text-sm max-w-md mx-auto">
-              {progress.map((p) => (
-                <li key={p.name} className="flex items-center gap-2 text-muted-foreground">
-                  {p.done ? <span className="text-primary">✓</span> : <Loader2 className="animate-spin" size={14} />}
-                  <span className="truncate">{p.name}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+            onChange={(e) => {
+              if (e.target.files?.[0]) void handleReplace(e.target.files[0]);
+              e.target.value = "";
+            }} />
         </div>
 
         <aside className="space-y-5 bg-card border border-border p-6">
@@ -253,14 +360,120 @@ function UploadPanel() {
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
               className="mt-2 w-full bg-background border border-border focus:border-primary outline-none p-2" />
           </label>
-          <p className="text-xs text-muted-foreground">Defaults applied to every file in the next batch.</p>
-          {busy && <p className="text-xs text-primary">Uploading…</p>}
+          <p className="text-xs text-muted-foreground">These defaults fill new previews automatically. You can still edit each file before saving.</p>
         </aside>
       </div>
 
       <div>
+        <div className="flex items-center justify-between gap-3 border-b border-border pb-2 mb-4 flex-wrap">
+          <div>
+            <h3 className="font-display text-xl">Ready to upload</h3>
+            <p className="text-sm text-muted-foreground mt-1">Preview each file, adjust details, then save it as a draft or upload it live.</p>
+          </div>
+          {staged.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => uploadAll("draft")} className="uppercase-tracked text-xs border border-border px-3 py-2 hover:border-primary">Save all drafts</button>
+              <button onClick={() => uploadAll("published")} className="uppercase-tracked text-xs bg-primary text-primary-foreground px-3 py-2">Upload all</button>
+            </div>
+          )}
+        </div>
+        {staged.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Drop files above and they will appear here instantly for preview and editing.</p>
+        ) : (
+          <div className="space-y-4">
+            {staged.map((item) => (
+              <article key={item.id} className="border border-border bg-card p-4 grid gap-4 lg:grid-cols-[260px_1fr]">
+                <div className="overflow-hidden border border-border bg-secondary min-h-[200px] flex items-center justify-center">
+                  {item.type === "image" && item.previewUrl && (
+                    <img src={item.previewUrl} alt={item.title || item.file.name} className="w-full h-full object-cover" />
+                  )}
+                  {item.type === "video" && item.previewUrl && (
+                    <video src={item.previewUrl} controls playsInline className="w-full h-full object-cover" />
+                  )}
+                  {item.type === "audio" && item.previewUrl && (
+                    <div className="w-full px-4">
+                      <p className="uppercase-tracked text-xs text-primary mb-3">Audio preview</p>
+                      <audio src={item.previewUrl} controls className="w-full" />
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div>
+                      <p className="font-display text-xl truncate">{item.file.name}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{formatBytes(item.file.size)} · {item.type}</p>
+                    </div>
+                    {item.uploading && <span className="inline-flex items-center gap-2 text-xs text-primary"><Loader2 size={14} className="animate-spin" /> Uploading…</span>}
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <label className="block">
+                      <span className="uppercase-tracked text-muted-foreground">Category</span>
+                      <select
+                        value={item.category}
+                        onChange={(e) => updateStaged(item.id, { category: e.target.value as UploadCategory })}
+                        className="mt-2 w-full bg-background border border-border focus:border-primary outline-none py-2 px-3"
+                      >
+                        <option value="photography">Photography</option>
+                        <option value="video">Video</option>
+                        <option value="audio">Audio</option>
+                        <option value="graphics">Graphics</option>
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="uppercase-tracked text-muted-foreground">Title</span>
+                      <input
+                        value={item.title}
+                        onChange={(e) => updateStaged(item.id, { title: e.target.value })}
+                        className="mt-2 w-full bg-transparent border-b border-border focus:border-primary outline-none py-2"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="block">
+                    <span className="uppercase-tracked text-muted-foreground">Description</span>
+                    <textarea
+                      value={item.description}
+                      onChange={(e) => updateStaged(item.id, { description: e.target.value })}
+                      rows={4}
+                      className="mt-2 w-full bg-background border border-border focus:border-primary outline-none p-3"
+                    />
+                  </label>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => uploadStaged(item, "draft")}
+                      disabled={item.uploading}
+                      className="uppercase-tracked text-xs border border-border px-3 py-2 hover:border-primary disabled:opacity-50"
+                    >
+                      Save draft
+                    </button>
+                    <button
+                      onClick={() => uploadStaged(item, "published")}
+                      disabled={item.uploading}
+                      className="uppercase-tracked text-xs bg-primary text-primary-foreground px-3 py-2 disabled:opacity-50"
+                    >
+                      Upload
+                    </button>
+                    <button
+                      onClick={() => removeStaged(item.id)}
+                      disabled={item.uploading}
+                      className="uppercase-tracked text-xs text-muted-foreground hover:text-destructive px-3 py-2 disabled:opacity-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
         <div className="flex items-center justify-between border-b border-border pb-2 mb-4">
-          <h3 className="font-display text-xl">Recent uploads</h3>
+          <h3 className="font-display text-xl">Saved media</h3>
           <button onClick={loadRecent} className="uppercase-tracked text-xs text-muted-foreground hover:text-primary">Refresh</button>
         </div>
         {recent.length === 0 ? (
