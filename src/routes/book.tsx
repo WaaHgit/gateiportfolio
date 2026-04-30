@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { submitBooking } from "@/server/booking-notify.functions";
 
 export const Route = createFileRoute("/book")({
   head: () => ({
@@ -71,14 +71,15 @@ function BookPage() {
       return;
     }
     setSubmitting(true);
-    const { error } = await supabase.from("bookings").insert(parsed.data);
-    setSubmitting(false);
-    if (error) {
+    try {
+      await submitBooking({ data: parsed.data });
+      setDone(true);
+      toast.success("Booking received");
+    } catch {
       toast.error("Couldn't submit — please try again.");
-      return;
+    } finally {
+      setSubmitting(false);
     }
-    setDone(true);
-    toast.success("Booking received");
   }
 
   if (done) {
