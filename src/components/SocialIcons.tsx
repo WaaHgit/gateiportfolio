@@ -38,12 +38,13 @@ export function SocialIcons({ size = 20 }: { size?: number }) {
           ? `https://wa.me/${l.url.replace(/[^\d]/g, "")}`
           : l.url;
         const href = safeHref(rawHref);
+        const isExternal = href.startsWith("http");
         return (
           <li key={l.platform}>
             <a
               href={href}
-              target={href.startsWith("http") ? "_blank" : undefined}
-              rel="noreferrer"
+              target={isExternal ? "_blank" : undefined}
+              rel={isExternal ? "noopener noreferrer external" : undefined}
               aria-label={l.label}
               title={l.label}
               className="flex items-center justify-center w-10 h-10 border border-border hover:border-primary hover:text-primary transition-colors"
