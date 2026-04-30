@@ -13,7 +13,7 @@ export const Route = createFileRoute("/admin")({
 type Tab = "upload" | "portfolio" | "bookings" | "links";
 
 function AdminPage() {
-  const { admin, user, loading } = useIsAdmin();
+  const { admin, user, loading, error, retry } = useIsAdmin();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("upload");
 
@@ -24,6 +24,31 @@ function AdminPage() {
 
   if (loading) return <Center>Loading…</Center>;
   if (!user) return null;
+  if (error) {
+    return (
+      <Center>
+        <p className="uppercase-tracked text-primary">Admin check</p>
+        <h1 className="font-display text-4xl mt-3">Connection issue</h1>
+        <p className="text-muted-foreground mt-3 max-w-md text-sm">
+          I couldn&apos;t verify your admin access just now. Please retry — your permissions may still be correct.
+        </p>
+        <div className="mt-6 flex items-center justify-center gap-3 flex-wrap">
+          <button
+            onClick={retry}
+            className="uppercase-tracked border border-border px-4 py-2 hover:border-primary"
+          >
+            Retry
+          </button>
+          <button
+            onClick={() => supabase.auth.signOut().then(() => navigate({ to: "/auth" }))}
+            className="uppercase-tracked border border-border px-4 py-2 hover:border-primary"
+          >
+            Sign out
+          </button>
+        </div>
+      </Center>
+    );
+  }
   if (!admin) {
     return (
       <Center>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Session, User } from "@supabase/supabase-js";
+import { getAdminStatus } from "@/server/admin.functions";
 
 export function useSession() {
   const [session, setSession] = useState<Session | null>(null);
@@ -20,22 +21,62 @@ export function useSession() {
 }
 
 export async function isAdmin(userId: string): Promise<boolean> {
-  const { data } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId)
-    .eq("role", "admin")
-    .maybeSingle();
-  return !!data;
+  const result = await getAdminStatus({ data: undefined });
+  return result.admin && !!userId;
 }
 
 export function useIsAdmin() {
   const { user, loading } = useSession();
   const [admin, setAdmin] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
+
   useEffect(() => {
     if (loading) return;
-    if (!user) { setAdmin(false); return; }
-    isAdmin(user.id).then(setAdmin);
-  }, [user, loading]);
-  return { admin, user, loading: loading || admin === null };
+    if (!user) {
+      setAdmin(false);
+      setError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const checkAdmin = async (attempt = 0) => {
+      try {
+        const allowed = await isAdmin(user.id);
+        if (cancelled) return;
+        setAdmin(allowed);
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+
+        if (attempt < 2) {
+          setTimeout(() => {
+            if (!cancelled) void checkAdmin(attempt + 1);
+          }, 600 * (attempt + 1));
+          return;
+        }
+
+        const message = err instanceof Error ? err.message : "Unable to verify admin access right now.";
+        setAdmin(null);
+        setError(message);
+      }
+    };
+
+    setAdmin(null);
+    setError(null);
+    void checkAdmin();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, loading, retryKey]);
+
+  return {
+    admin,
+    user,
+    error,
+    retry: () => setRetryKey((value) => value + 1),
+    loading: loading || (!!user && admin === null && error === null),
+  };
 }
