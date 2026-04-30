@@ -41,8 +41,8 @@ export function SocialIcons({ size = 20 }: { size?: number }) {
         return (
           <li key={l.platform}>
             <a
-              href={href || "#"}
-              target={href?.startsWith("http") ? "_blank" : undefined}
+              href={href}
+              target={href.startsWith("http") ? "_blank" : undefined}
               rel="noreferrer"
               aria-label={l.label}
               title={l.label}
