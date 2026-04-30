@@ -4,6 +4,12 @@ import { Instagram, Music2, Youtube, Globe, Mail, MessageCircle } from "lucide-r
 
 type Link = { platform: string; label: string; url: string; is_visible: boolean };
 
+const SAFE_PROTOCOLS = /^(https?:\/\/|mailto:|tel:|#)/i;
+function safeHref(url: string | null | undefined): string {
+  if (!url) return "#";
+  return SAFE_PROTOCOLS.test(url) ? url : "#";
+}
+
 const ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   instagram: Instagram,
   tiktok: Music2,
@@ -28,14 +34,15 @@ export function SocialIcons({ size = 20 }: { size?: number }) {
       {links.map((l) => {
         const Icon = ICONS[l.platform] ?? Globe;
         const isWhats = l.platform === "whatsapp";
-        const href = isWhats && l.url && !l.url.startsWith("http") && !l.url.startsWith("#")
+        const rawHref = isWhats && l.url && !l.url.startsWith("http") && !l.url.startsWith("#")
           ? `https://wa.me/${l.url.replace(/[^\d]/g, "")}`
           : l.url;
+        const href = safeHref(rawHref);
         return (
           <li key={l.platform}>
             <a
-              href={href || "#"}
-              target={href?.startsWith("http") ? "_blank" : undefined}
+              href={href}
+              target={href.startsWith("http") ? "_blank" : undefined}
               rel="noreferrer"
               aria-label={l.label}
               title={l.label}

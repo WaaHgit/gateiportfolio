@@ -323,6 +323,13 @@ function LinksPanel() {
   }
   useEffect(() => { load(); }, []);
   async function save(id: string, patch: Partial<{ url: string; label: string; is_visible: boolean }>) {
+    if (typeof patch.url === "string") {
+      const v = patch.url.trim();
+      if (v && !/^(https?:\/\/|mailto:|tel:|#)/i.test(v)) {
+        toast.error("URL must start with http(s)://, mailto:, tel:, or # (use a phone number for WhatsApp)");
+        return;
+      }
+    }
     const { error } = await supabase.from("social_links").update(patch).eq("id", id);
     if (error) toast.error(error.message);
     else toast.success("Saved");
