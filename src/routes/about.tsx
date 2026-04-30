@@ -15,7 +15,7 @@ function AboutPage() {
     <section className="container-narrow py-24">
       <p className="uppercase-tracked text-primary">About</p>
       <h1 className="font-display text-5xl md:text-6xl mt-3 text-balance">
-        Sound, image, story — one studio.
+        MULTIMEDIA POWERHOUSE
       </h1>
       <div className="mt-12 grid md:grid-cols-[1fr_2fr] gap-12">
         <div className="aspect-[3/4] bg-card border border-border bg-spot" aria-hidden />
@@ -24,8 +24,7 @@ function AboutPage() {
             GATEI is a multimedia creative director and production specialist
             with a hand in every phase of a production — concept and
             scripting, casting and crew, recording and shooting, editing and
-            mastering. The work is cinematic by default and intentional in
-            every detail.
+            mastering.
           </p>
           <p>
             With deep experience across audio engineering, cinematography and

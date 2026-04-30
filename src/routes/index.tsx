@@ -31,7 +31,6 @@ function Hero() {
     <section className="relative overflow-hidden">
       <div className="absolute inset-0 bg-spot" aria-hidden />
       <div className="container-narrow pt-24 pb-32 md:pt-36 md:pb-44 relative">
-        <p className="uppercase-tracked text-primary mb-6 animate-in-fade">Multimedia Studio · Est. Now</p>
         <h1 className="font-display text-[3.2rem] sm:text-7xl md:text-8xl leading-[0.95] text-balance animate-in-rise">
           GATEI
         </h1>
@@ -166,7 +165,7 @@ function ConnectStrip() {
     <section className="border-t border-border">
       <div className="container-narrow py-24 text-center">
         <p className="uppercase-tracked text-primary">Connect</p>
-        <h2 className="font-display text-4xl md:text-5xl mt-3">Find me everywhere</h2>
+        <h2 className="font-display text-4xl md:text-5xl mt-3">Connect with me</h2>
         <div className="mt-8 flex justify-center"><SocialIcons /></div>
       </div>
     </section>
