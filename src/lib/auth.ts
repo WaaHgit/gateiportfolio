@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Session, User } from "@supabase/supabase-js";
+import { getAdminStatus } from "@/server/admin.functions";
 
 export function useSession() {
   const [session, setSession] = useState<Session | null>(null);
@@ -20,18 +21,8 @@ export function useSession() {
 }
 
 export async function isAdmin(userId: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId)
-    .eq("role", "admin")
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  return !!data;
+  const result = await getAdminStatus({ data: undefined });
+  return result.admin && !!userId;
 }
 
 export function useIsAdmin() {
