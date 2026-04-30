@@ -102,6 +102,13 @@ function BookPage() {
       </p>
 
       <form onSubmit={onSubmit} className="mt-12 max-w-2xl space-y-6">
+        {/* Honeypot — hidden from users; bots auto-fill it and get rejected */}
+        <div aria-hidden="true" style={{ position: "absolute", left: "-10000px", width: 1, height: 1, overflow: "hidden" }}>
+          <label>
+            Website
+            <input type="text" name="website" tabIndex={-1} autoComplete="off" />
+          </label>
+        </div>
         <Field label="Full name" name="full_name" required />
         <div className="grid sm:grid-cols-2 gap-6">
           <Field label="Email" name="email" type="email" required />
