@@ -16,6 +16,7 @@ export function WhatsAppFab() {
         const href = data.url.startsWith("http")
           ? data.url
           : `https://wa.me/${data.url.replace(/[^\d]/g, "")}`;
+        if (!/^https?:\/\//i.test(href)) return;
         setUrl(href);
       });
   }, []);
