@@ -183,7 +183,7 @@ function UploadPanel() {
       created.push({
         id: crypto.randomUUID(),
         file,
-        previewUrl: type === "audio" ? null : URL.createObjectURL(file),
+        previewUrl: URL.createObjectURL(file),
         type,
         category,
         title: title || baseTitle(file.name),
@@ -390,10 +390,10 @@ function UploadPanel() {
                   {item.type === "video" && item.previewUrl && (
                     <video src={item.previewUrl} controls playsInline className="w-full h-full object-cover" />
                   )}
-                  {item.type === "audio" && (
+                  {item.type === "audio" && item.previewUrl && (
                     <div className="w-full px-4">
                       <p className="uppercase-tracked text-xs text-primary mb-3">Audio preview</p>
-                      <audio src={URL.createObjectURL(item.file)} controls className="w-full" />
+                      <audio src={item.previewUrl} controls className="w-full" />
                     </div>
                   )}
                 </div>
