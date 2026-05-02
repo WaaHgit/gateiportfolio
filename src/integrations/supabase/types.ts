@@ -68,6 +68,33 @@ export type Database = {
         }
         Relationships: []
       }
+      media: {
+        Row: {
+          category: string | null
+          created_at: string | null
+          description: string | null
+          id: string
+          image_url: string | null
+          title: string | null
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          title?: string | null
+        }
+        Update: {
+          category?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          title?: string | null
+        }
+        Relationships: []
+      }
       portfolio_items: {
         Row: {
           category: Database["public"]["Enums"]["media_category"]
