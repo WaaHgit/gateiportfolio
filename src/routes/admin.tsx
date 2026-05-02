@@ -1,16 +1,17 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useIsAdmin } from "@/lib/auth";
 import { toast } from "sonner";
-import { Trash2, UploadCloud, LogOut, Loader2, Star } from "lucide-react";
+import { Trash2, UploadCloud, LogOut, Loader2, Star, CalendarCheck, BarChart3 } from "lucide-react";
+import { confirmBookingAndAddToCalendar } from "@/server/calendar.functions";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "Admin — GATEI" }] }),
   component: AdminPage,
 });
 
-type Tab = "upload" | "portfolio" | "reviews" | "bookings" | "links";
+type Tab = "upload" | "portfolio" | "reviews" | "bookings" | "insights" | "links";
 
 function AdminPage() {
   const { admin, user, loading, error, retry } = useIsAdmin();
@@ -69,7 +70,7 @@ function AdminPage() {
       </div>
 
       <nav className="mt-6 flex flex-wrap gap-2 border-b border-border">
-        {(["upload", "portfolio", "reviews", "bookings", "links"] as Tab[]).map((t) => (
+        {(["upload", "portfolio", "reviews", "bookings", "insights", "links"] as Tab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={`uppercase-tracked px-4 py-3 -mb-px border-b-2 ${tab === t ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
             {t}
@@ -82,6 +83,7 @@ function AdminPage() {
         {tab === "portfolio" && <PortfolioPanel />}
         {tab === "reviews" && <ReviewsPanel />}
         {tab === "bookings" && <BookingsPanel />}
+        {tab === "insights" && <InsightsPanel />}
         {tab === "links" && <LinksPanel />}
       </div>
     </section>
