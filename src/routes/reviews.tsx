@@ -182,7 +182,7 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
       toast.error(error.message);
       return;
     }
-    toast.success("Thanks — your review is awaiting approval");
+    toast.success("thank you for your feedback");
     setName("");
     setEmail("");
     setMessage("");
