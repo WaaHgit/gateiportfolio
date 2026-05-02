@@ -34,37 +34,58 @@ export type Database = {
       }
       bookings: {
         Row: {
+          agreement_confirmed: boolean
+          calendar_event_id: string | null
           created_at: string
           description: string
           email: string
+          event_date: string | null
+          event_time: string | null
           full_name: string
           id: string
+          latitude: number | null
+          longitude: number | null
           phone: string
           preferred_date: string | null
           service: string
           status: string
+          venue: string | null
         }
         Insert: {
+          agreement_confirmed?: boolean
+          calendar_event_id?: string | null
           created_at?: string
           description: string
           email: string
+          event_date?: string | null
+          event_time?: string | null
           full_name: string
           id?: string
+          latitude?: number | null
+          longitude?: number | null
           phone: string
           preferred_date?: string | null
           service: string
           status?: string
+          venue?: string | null
         }
         Update: {
+          agreement_confirmed?: boolean
+          calendar_event_id?: string | null
           created_at?: string
           description?: string
           email?: string
+          event_date?: string | null
+          event_time?: string | null
           full_name?: string
           id?: string
+          latitude?: number | null
+          longitude?: number | null
           phone?: string
           preferred_date?: string | null
           service?: string
           status?: string
+          venue?: string | null
         }
         Relationships: []
       }
@@ -92,6 +113,42 @@ export type Database = {
           id?: string
           image_url?: string | null
           title?: string | null
+        }
+        Relationships: []
+      }
+      page_events: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string
+          label: string | null
+          path: string | null
+          platform: string | null
+          referrer: string | null
+          session_id: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind: string
+          label?: string | null
+          path?: string | null
+          platform?: string | null
+          referrer?: string | null
+          session_id?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string
+          label?: string | null
+          path?: string | null
+          platform?: string | null
+          referrer?: string | null
+          session_id?: string | null
+          user_agent?: string | null
         }
         Relationships: []
       }

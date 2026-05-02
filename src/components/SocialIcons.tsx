@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Instagram, Music2, Youtube, Globe, Mail, MessageCircle } from "lucide-react";
+import { track } from "@/lib/track";
 
 type Link = { platform: string; label: string; url: string; is_visible: boolean };
 
@@ -47,6 +48,7 @@ export function SocialIcons({ size = 20 }: { size?: number }) {
               rel={isExternal ? "noopener noreferrer external" : undefined}
               aria-label={l.label}
               title={l.label}
+              onClick={() => void track({ kind: "link_click", platform: l.platform, label: l.label })}
               className="flex items-center justify-center w-10 h-10 border border-border hover:border-primary hover:text-primary transition-colors"
             >
               <Icon size={size} />
