@@ -3,6 +3,7 @@ import appCss from "../styles.css?url";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { WhatsAppFab } from "@/components/WhatsAppFab";
+import { PageViewTracker } from "@/components/PageViewTracker";
 import { Toaster } from "sonner";
 
 function NotFoundComponent() {
@@ -61,6 +62,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
 function RootComponent() {
   return (
     <div className="min-h-screen flex flex-col">
+      <PageViewTracker />
       <SiteHeader />
       <main className="flex-1">
         <Outlet />
