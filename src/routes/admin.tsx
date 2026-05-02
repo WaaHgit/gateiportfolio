@@ -660,24 +660,69 @@ function ReviewsPanel() {
 }
 
 /* ============== BOOKINGS ============== */
+type BookingRow = {
+  id: string;
+  full_name: string;
+  email: string;
+  phone: string;
+  service: string;
+  description: string;
+  preferred_date: string | null;
+  status: string;
+  created_at: string;
+  agreement_confirmed: boolean;
+  event_date: string | null;
+  event_time: string | null;
+  venue: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  calendar_event_id: string | null;
+};
+
 function BookingsPanel() {
-  const [rows, setRows] = useState<{ id: string; full_name: string; email: string; phone: string; service: string; description: string; preferred_date: string | null; status: string; created_at: string }[]>([]);
+  const [rows, setRows] = useState<BookingRow[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+
   async function load() {
     const { data } = await supabase.from("bookings").select("*").order("created_at", { ascending: false });
-    setRows((data as never) ?? []);
+    setRows((data as BookingRow[]) ?? []);
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    const ch = supabase
+      .channel("admin-bookings")
+      .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
   async function setStatus(id: string, status: string) {
     const { error } = await supabase.from("bookings").update({ status }).eq("id", id);
-    if (error) toast.error(error.message);
-    else { toast.success("Updated"); load(); }
+    if (error) toast.error(error.message); else toast.success("Updated");
   }
   async function del(id: string) {
     if (!confirm("Delete booking?")) return;
     const { error } = await supabase.from("bookings").delete().eq("id", id);
-    if (error) toast.error(error.message);
-    else { toast.success("Deleted"); load(); }
+    if (error) toast.error(error.message); else toast.success("Deleted");
   }
+  async function patch(id: string, patch: Partial<BookingRow>) {
+    const { error } = await supabase.from("bookings").update(patch).eq("id", id);
+    if (error) toast.error(error.message);
+  }
+  async function confirmAgreement(id: string) {
+    setBusy(id);
+    try {
+      const res = await confirmBookingAndAddToCalendar({ data: { booking_id: id } });
+      if (!res.ok) { toast.error(res.reason ?? "Could not confirm"); return; }
+      if (res.calendar_added) toast.success("Confirmed and added to calendar ✅");
+      else toast.success(`Confirmed. ${res.reason ?? ""}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (rows.length === 0) return <p className="text-muted-foreground text-sm">No bookings yet.</p>;
   return (
     <div className="space-y-4">
@@ -706,8 +751,237 @@ function BookingsPanel() {
             <span className="text-muted-foreground">{b.preferred_date ? `Preferred: ${b.preferred_date}` : "No preferred date"}</span>
           </div>
           <p className="mt-4 text-sm text-muted-foreground whitespace-pre-wrap">{b.description}</p>
+
+          <div className="mt-5 border-t border-border pt-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="uppercase-tracked text-primary">Agreement & calendar</p>
+              {b.calendar_event_id && (
+                <span className="text-[11px] uppercase-tracked text-primary flex items-center gap-1">
+                  <CalendarCheck size={12} /> on calendar
+                </span>
+              )}
+            </div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
+              <label className="block">
+                <span className="uppercase-tracked text-muted-foreground text-[11px]">Event date</span>
+                <input type="date" defaultValue={b.event_date ?? ""}
+                  onBlur={(e) => patch(b.id, { event_date: e.target.value || null })}
+                  className="mt-1 w-full bg-background border border-border px-2 py-1.5 text-sm" />
+              </label>
+              <label className="block">
+                <span className="uppercase-tracked text-muted-foreground text-[11px]">Event time</span>
+                <input type="time" defaultValue={b.event_time ?? ""}
+                  onBlur={(e) => patch(b.id, { event_time: e.target.value || null })}
+                  className="mt-1 w-full bg-background border border-border px-2 py-1.5 text-sm" />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="uppercase-tracked text-muted-foreground text-[11px]">Venue</span>
+                <input type="text" defaultValue={b.venue ?? ""}
+                  placeholder="Studio / location name"
+                  onBlur={(e) => patch(b.id, { venue: e.target.value || null })}
+                  className="mt-1 w-full bg-background border border-border px-2 py-1.5 text-sm" />
+              </label>
+              <label className="block">
+                <span className="uppercase-tracked text-muted-foreground text-[11px]">Latitude</span>
+                <input type="number" step="any" defaultValue={b.latitude ?? ""}
+                  onBlur={(e) => patch(b.id, { latitude: e.target.value === "" ? null : Number(e.target.value) })}
+                  className="mt-1 w-full bg-background border border-border px-2 py-1.5 text-sm" />
+              </label>
+              <label className="block">
+                <span className="uppercase-tracked text-muted-foreground text-[11px]">Longitude</span>
+                <input type="number" step="any" defaultValue={b.longitude ?? ""}
+                  onBlur={(e) => patch(b.id, { longitude: e.target.value === "" ? null : Number(e.target.value) })}
+                  className="mt-1 w-full bg-background border border-border px-2 py-1.5 text-sm" />
+              </label>
+            </div>
+
+            <label className="mt-4 flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={b.agreement_confirmed}
+                disabled={busy === b.id || b.agreement_confirmed}
+                onChange={() => confirmAgreement(b.id)}
+                className="mt-1 w-4 h-4 accent-[oklch(0.82_0.14_75)]"
+              />
+              <span className="text-sm">
+                <span className="font-medium">Agreement reached — add to calendar</span>
+                <span className="block text-xs text-muted-foreground mt-1">
+                  Tick after you've spoken with the client. Fills in the event on <code>projectfilesav@gmail.com</code> calendar automatically.
+                  {!b.agreement_confirmed && " (Add an event date first.)"}
+                </span>
+                {busy === b.id && <span className="block text-xs text-primary mt-1 flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Working…</span>}
+              </span>
+            </label>
+          </div>
         </article>
       ))}
+    </div>
+  );
+}
+
+/* ============== INSIGHTS ============== */
+type EventRow = { id: string; kind: string; path: string | null; platform: string | null; created_at: string };
+type Bucket = "day" | "month" | "year";
+
+function InsightsPanel() {
+  const [events, setEvents] = useState<EventRow[]>([]);
+  const [bookings, setBookings] = useState<{ id: string; created_at: string; status: string }[]>([]);
+  const [bucket, setBucket] = useState<Bucket>("day");
+  const [days, setDays] = useState(30);
+
+  async function load() {
+    const since = new Date(Date.now() - days * 86400 * 1000).toISOString();
+    const [{ data: e }, { data: b }] = await Promise.all([
+      supabase.from("page_events").select("id,kind,path,platform,created_at").gte("created_at", since).order("created_at", { ascending: false }).limit(5000),
+      supabase.from("bookings").select("id,created_at,status").gte("created_at", since).order("created_at", { ascending: false }),
+    ]);
+    setEvents((e as EventRow[]) ?? []);
+    setBookings((b as never) ?? []);
+  }
+  useEffect(() => { load(); }, [days]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const ch = supabase
+      .channel("admin-insights")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "page_events" }, () => load())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "bookings" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const totals = useMemo(() => {
+    const views = events.filter((x) => x.kind === "page_view").length;
+    const clicks = events.filter((x) => x.kind === "link_click").length;
+    const byPlatform: Record<string, number> = {};
+    for (const e of events) if (e.kind === "link_click" && e.platform) byPlatform[e.platform] = (byPlatform[e.platform] ?? 0) + 1;
+    const byPath: Record<string, number> = {};
+    for (const e of events) if (e.kind === "page_view" && e.path) byPath[e.path] = (byPath[e.path] ?? 0) + 1;
+    return { views, clicks, byPlatform, byPath, bookings: bookings.length };
+  }, [events, bookings]);
+
+  const series = useMemo(() => {
+    const map: Record<string, { views: number; clicks: number; bookings: number }> = {};
+    function key(d: Date) {
+      if (bucket === "year") return `${d.getFullYear()}`;
+      if (bucket === "month") return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+    for (const e of events) {
+      const k = key(new Date(e.created_at));
+      map[k] ??= { views: 0, clicks: 0, bookings: 0 };
+      if (e.kind === "page_view") map[k].views++;
+      else if (e.kind === "link_click") map[k].clicks++;
+    }
+    for (const b of bookings) {
+      const k = key(new Date(b.created_at));
+      map[k] ??= { views: 0, clicks: 0, bookings: 0 };
+      map[k].bookings++;
+    }
+    return Object.entries(map).sort(([a], [b]) => (a < b ? 1 : -1)).slice(0, 30);
+  }, [events, bookings, bucket]);
+
+  const max = Math.max(1, ...series.map(([, v]) => v.views + v.clicks + v.bookings));
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <p className="uppercase-tracked text-primary flex items-center gap-2"><BarChart3 size={14} /> Live insights</p>
+        <div className="flex flex-wrap gap-2 text-xs">
+          <select value={days} onChange={(e) => setDays(Number(e.target.value))}
+            className="bg-background border border-border px-2 py-1 uppercase-tracked">
+            <option value={7}>Last 7 days</option>
+            <option value={30}>Last 30 days</option>
+            <option value={90}>Last 90 days</option>
+            <option value={365}>Last year</option>
+          </select>
+          <div className="flex border border-border">
+            {(["day", "month", "year"] as Bucket[]).map((b) => (
+              <button key={b} onClick={() => setBucket(b)}
+                className={`px-3 py-1 uppercase-tracked ${bucket === b ? "bg-primary text-primary-foreground" : "hover:text-primary"}`}>
+                {b}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <Stat label="Page views" value={totals.views} />
+        <Stat label="Link clicks" value={totals.clicks} />
+        <Stat label="Bookings" value={totals.bookings} />
+        <Stat label="Total events" value={events.length} />
+      </div>
+
+      <div>
+        <h3 className="font-display text-xl mb-3">Activity over time</h3>
+        {series.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No data yet for this range.</p>
+        ) : (
+          <div className="space-y-2">
+            {series.map(([label, v]) => {
+              const total = v.views + v.clicks + v.bookings;
+              return (
+                <div key={label} className="grid grid-cols-[100px_1fr_auto] gap-3 items-center text-xs">
+                  <span className="text-muted-foreground">{label}</span>
+                  <div className="flex h-5 bg-secondary overflow-hidden">
+                    <div className="bg-primary/80" style={{ width: `${(v.views / max) * 100}%` }} title={`${v.views} views`} />
+                    <div className="bg-chart-2" style={{ width: `${(v.clicks / max) * 100}%` }} title={`${v.clicks} clicks`} />
+                    <div className="bg-chart-3" style={{ width: `${(v.bookings / max) * 100}%` }} title={`${v.bookings} bookings`} />
+                  </div>
+                  <span className="tabular-nums">{total}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div className="flex gap-4 mt-3 text-[11px] uppercase-tracked text-muted-foreground">
+          <span className="flex items-center gap-1"><span className="w-3 h-3 bg-primary/80 inline-block" /> Views</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 bg-chart-2 inline-block" /> Clicks</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 bg-chart-3 inline-block" /> Bookings</span>
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6">
+        <div>
+          <h3 className="font-display text-xl mb-3">Clicks by platform</h3>
+          {Object.keys(totals.byPlatform).length === 0 ? (
+            <p className="text-sm text-muted-foreground">No link clicks yet.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {Object.entries(totals.byPlatform).sort((a, b) => b[1] - a[1]).map(([k, n]) => (
+                <li key={k} className="flex items-center justify-between border-b border-border pb-1">
+                  <span className="uppercase-tracked text-muted-foreground">{k}</span>
+                  <span className="tabular-nums">{n}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div>
+          <h3 className="font-display text-xl mb-3">Top pages</h3>
+          {Object.keys(totals.byPath).length === 0 ? (
+            <p className="text-sm text-muted-foreground">No page views yet.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {Object.entries(totals.byPath).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, n]) => (
+                <li key={k} className="flex items-center justify-between border-b border-border pb-1">
+                  <span className="truncate">{k}</span>
+                  <span className="tabular-nums">{n}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="border border-border bg-card p-4">
+      <p className="uppercase-tracked text-muted-foreground text-[11px]">{label}</p>
+      <p className="font-display text-3xl mt-2 tabular-nums">{value}</p>
     </div>
   );
 }
