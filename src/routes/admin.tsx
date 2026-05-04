@@ -155,12 +155,19 @@ function UploadPanel() {
   async function loadRecent() {
     const { data } = await supabase
       .from("portfolio_items")
-      .select("id,file_url,storage_path,type,category,title,status,mime_type")
+      .select("id,file_url,storage_path,type,category,title,description,status,mime_type")
       .order("created_at", { ascending: false })
-      .limit(24);
+      .limit(60);
     setRecent((data as RecentItem[]) ?? []);
   }
-  useEffect(() => { loadRecent(); }, []);
+  useEffect(() => {
+    loadRecent();
+    const ch = supabase
+      .channel("admin-portfolio-watch")
+      .on("postgres_changes", { event: "*", schema: "public", table: "portfolio_items" }, () => loadRecent())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
 
   useEffect(() => {
     stagedRef.current = staged;
