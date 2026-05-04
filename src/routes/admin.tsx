@@ -544,11 +544,6 @@ function UploadPanel() {
           onSaved={() => { setEditing(null); loadRecent(); }}
         />
       )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
