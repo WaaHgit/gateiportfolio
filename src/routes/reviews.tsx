@@ -169,12 +169,14 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
       return;
     }
     setBusy(true);
+    const { data: sess } = await supabase.auth.getSession();
+    const isAuthed = !!sess.session;
     const { error } = await supabase.from("reviews").insert({
       name: parsed.data.name,
-      email: parsed.data.email || null,
+      email: isAuthed ? (parsed.data.email || null) : null,
       message: parsed.data.message,
       rating: parsed.data.rating,
-      avatar_url: avatarUrl,
+      avatar_url: isAuthed ? avatarUrl : null,
       status: "pending",
     });
     setBusy(false);
