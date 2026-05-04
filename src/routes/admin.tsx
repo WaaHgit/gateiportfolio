@@ -516,18 +516,34 @@ function UploadPanel() {
                       {it.status}
                     </span>
                   </div>
+                  <p className="text-[10px] text-muted-foreground uppercase-tracked">{it.category}</p>
+                  {it.description && <p className="text-[11px] text-muted-foreground line-clamp-2">{it.description}</p>}
                   <div className="flex items-center gap-1 flex-wrap">
                     {it.status === "draft" ? (
                       <button onClick={() => setStatus(it.id, "published")} className="text-[11px] uppercase-tracked bg-primary text-primary-foreground px-2 py-1">Publish</button>
                     ) : (
                       <button onClick={() => setStatus(it.id, "draft")} className="text-[11px] uppercase-tracked border border-border px-2 py-1 hover:border-primary">Unpublish</button>
                     )}
+                    <button onClick={() => setEditing(it)} className="text-[11px] uppercase-tracked border border-border px-2 py-1 hover:border-primary">Edit</button>
                     <button onClick={() => startReplace(it.id)} className="text-[11px] uppercase-tracked border border-border px-2 py-1 hover:border-primary">Replace</button>
                     <button onClick={() => del(it)} className="text-[11px] uppercase-tracked text-muted-foreground hover:text-destructive p-1 ml-auto">
                       <Trash2 size={13} />
                     </button>
                   </div>
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {editing && (
+        <EditMediaModal
+          item={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); loadRecent(); }}
+        />
+      )}
               </div>
             ))}
           </div>
