@@ -214,14 +214,21 @@ function UploadPanel() {
     setStaged((prev) => prev.map((entry) => (entry.id === item.id ? { ...entry, uploading: true } : entry)));
 
     try {
+      // Make sure we have an active session — uploads require admin auth.
+      const { data: sess } = await supabase.auth.getSession();
+      if (!sess.session) throw new Error("Your session expired. Please sign in again.");
+
       const ext = item.file.name.split(".").pop() ?? "bin";
       const path = `${item.type}/${crypto.randomUUID()}.${ext}`;
       const { error: uploadError } = await supabase.storage.from("media").upload(path, item.file, {
-        contentType: item.file.type,
+        contentType: item.file.type || "application/octet-stream",
         cacheControl: "31536000",
         upsert: false,
       });
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error("Storage upload failed", uploadError);
+        throw uploadError;
+      }
 
       const { data: pub } = supabase.storage.from("media").getPublicUrl(path);
       const { error: insertError } = await supabase.from("portfolio_items").insert({
