@@ -548,6 +548,122 @@ function UploadPanel() {
   );
 }
 
+
+function EditMediaModal({ item, onClose, onSaved }: { item: RecentItem; onClose: () => void; onSaved: () => void }) {
+  const [title, setTitle] = useState(item.title ?? "");
+  const [description, setDescription] = useState(item.description ?? "");
+  const [category, setCategory] = useState<UploadCategory>(item.category);
+  const [saving, setSaving] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [newFile, setNewFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!newFile) { setPreviewUrl(null); return; }
+    const url = URL.createObjectURL(newFile);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [newFile]);
+
+  function detectType(file: File): MediaKind | null {
+    if (file.type.startsWith("image/")) return "image";
+    if (file.type.startsWith("video/")) return "video";
+    if (file.type.startsWith("audio/")) return "audio";
+    return null;
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const patch: Record<string, unknown> = {
+        title: title || null,
+        description: description || null,
+        category,
+      };
+      if (newFile) {
+        const type = detectType(newFile);
+        if (!type) throw new Error("Unsupported file type");
+        const ext = newFile.name.split(".").pop() ?? "bin";
+        const path = `${type}/${crypto.randomUUID()}.${ext}`;
+        const { error: upErr } = await supabase.storage.from("media").upload(path, newFile, {
+          contentType: newFile.type || "application/octet-stream",
+          cacheControl: "31536000",
+          upsert: false,
+        });
+        if (upErr) throw upErr;
+        const { data: pub } = supabase.storage.from("media").getPublicUrl(path);
+        patch.file_url = pub.publicUrl;
+        patch.storage_path = path;
+        patch.type = type;
+        patch.mime_type = newFile.type;
+        patch.size_bytes = newFile.size;
+      }
+      const { error } = await supabase.from("portfolio_items").update(patch).eq("id", item.id);
+      if (error) throw error;
+      if (newFile && item.storage_path) {
+        await supabase.storage.from("media").remove([item.storage_path]);
+      }
+      toast.success("Saved");
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const showType = newFile ? detectType(newFile) : item.type;
+  const showUrl = newFile ? previewUrl : item.file_url;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-card border border-border max-w-2xl w-full max-h-[90vh] overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-display text-2xl">Edit media</h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">✕</button>
+        </div>
+        <div className="bg-secondary border border-border min-h-[200px] flex items-center justify-center mb-4">
+          {showType === "image" && showUrl && <img src={showUrl} alt="" className="max-h-[40vh] object-contain" />}
+          {showType === "video" && showUrl && <video src={showUrl} controls className="max-h-[40vh]" />}
+          {showType === "audio" && showUrl && <audio src={showUrl} controls className="w-full px-4" />}
+        </div>
+        <div className="space-y-3">
+          <label className="block">
+            <span className="uppercase-tracked text-muted-foreground text-xs">Title</span>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 w-full bg-background border border-border focus:border-primary outline-none py-2 px-3" />
+          </label>
+          <label className="block">
+            <span className="uppercase-tracked text-muted-foreground text-xs">Description</span>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="mt-1 w-full bg-background border border-border focus:border-primary outline-none p-2" />
+          </label>
+          <label className="block">
+            <span className="uppercase-tracked text-muted-foreground text-xs">Category</span>
+            <select value={category} onChange={(e) => setCategory(e.target.value as UploadCategory)} className="mt-1 w-full bg-background border border-border focus:border-primary outline-none py-2 px-3">
+              <option value="photography">Photography</option>
+              <option value="video">Video</option>
+              <option value="audio">Audio</option>
+              <option value="graphics">Graphics</option>
+            </select>
+          </label>
+          <div>
+            <button onClick={() => fileRef.current?.click()} className="uppercase-tracked text-xs border border-border px-3 py-2 hover:border-primary">
+              {newFile ? `New file: ${newFile.name}` : "Swap file (optional)"}
+            </button>
+            <input ref={fileRef} type="file" accept="image/*,video/*,audio/*" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) setNewFile(f); e.target.value = ""; }} />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button onClick={save} disabled={saving} className="uppercase-tracked text-xs bg-primary text-primary-foreground px-4 py-2 disabled:opacity-50">
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button onClick={onClose} disabled={saving} className="uppercase-tracked text-xs border border-border px-4 py-2 hover:border-primary disabled:opacity-50">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ============== PORTFOLIO MANAGEMENT ============== */
 function PortfolioPanel() {
   const [items, setItems] = useState<{ id: string; file_url: string; storage_path: string; type: string; category: string; title: string | null; status: string }[]>([]);
