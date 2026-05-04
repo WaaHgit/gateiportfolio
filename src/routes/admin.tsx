@@ -700,11 +700,8 @@ function BookingsPanel() {
   }
   useEffect(() => {
     load();
-    const ch = supabase
-      .channel("admin-bookings")
-      .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, () => load())
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    const id = setInterval(load, 30000);
+    return () => clearInterval(id);
   }, []);
 
   async function setStatus(id: string, status: string) {
@@ -852,12 +849,8 @@ function InsightsPanel() {
   useEffect(() => { load(); }, [days]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const ch = supabase
-      .channel("admin-insights")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "page_events" }, () => load())
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "bookings" }, () => load())
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    const id = setInterval(load, 60000);
+    return () => clearInterval(id);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totals = useMemo(() => {
