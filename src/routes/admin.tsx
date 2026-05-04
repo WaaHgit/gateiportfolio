@@ -242,7 +242,10 @@ function UploadPanel() {
         size_bytes: item.file.size,
         status,
       });
-      if (insertError) throw insertError;
+      if (insertError) {
+        console.error("Portfolio insert failed", insertError);
+        throw insertError;
+      }
 
       removeStaged(item.id);
       await loadRecent();
@@ -250,6 +253,7 @@ function UploadPanel() {
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Upload failed";
+      console.error("Upload error:", error);
       toast.error(message);
       setStaged((prev) => prev.map((entry) => (entry.id === item.id ? { ...entry, uploading: false } : entry)));
       return false;
