@@ -103,8 +103,9 @@ type RecentItem = {
   file_url: string;
   storage_path: string;
   type: MediaKind;
-  category: string;
+  category: UploadCategory;
   title: string | null;
+  description: string | null;
   status: "draft" | "published";
   mime_type: string | null;
 };
@@ -127,7 +128,7 @@ function UploadPanel() {
   const [description, setDescription] = useState("");
   const [recent, setRecent] = useState<RecentItem[]>([]);
   const [staged, setStaged] = useState<StagedItem[]>([]);
-  const [editing, setEditing] = useState<RecentItem & { description?: string | null } | null>(null);
+  const [editing, setEditing] = useState<RecentItem | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
   const replacingId = useRef<string | null>(null);
