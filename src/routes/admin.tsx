@@ -575,7 +575,10 @@ function EditMediaModal({ item, onClose, onSaved }: { item: RecentItem; onClose:
   async function save() {
     setSaving(true);
     try {
-      const patch: Record<string, unknown> = {
+      const patch: {
+        title: string | null; description: string | null; category: UploadCategory;
+        file_url?: string; storage_path?: string; type?: MediaKind; mime_type?: string; size_bytes?: number;
+      } = {
         title: title || null,
         description: description || null,
         category,
