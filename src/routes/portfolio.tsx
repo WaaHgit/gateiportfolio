@@ -33,12 +33,20 @@ function PortfolioPage() {
   const [active, setActive] = useState<Item | null>(null);
 
   useEffect(() => {
-    supabase
-      .from("portfolio_items")
-      .select("id,file_url,type,category,title,description")
-      .order("sort_order")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => setItems((data as Item[]) ?? []));
+    const load = () => {
+      supabase
+        .from("portfolio_items")
+        .select("id,file_url,type,category,title,description")
+        .order("sort_order")
+        .order("created_at", { ascending: false })
+        .then(({ data }) => setItems((data as Item[]) ?? []));
+    };
+    load();
+    const ch = supabase
+      .channel("public-portfolio")
+      .on("postgres_changes", { event: "*", schema: "public", table: "portfolio_items" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
   }, []);
 
   const filtered = useMemo(
