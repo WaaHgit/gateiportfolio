@@ -199,6 +199,7 @@ export type Database = {
       }
       reviews: {
         Row: {
+          author_id: string | null
           avatar_url: string | null
           created_at: string
           email: string | null
@@ -209,6 +210,7 @@ export type Database = {
           status: string
         }
         Insert: {
+          author_id?: string | null
           avatar_url?: string | null
           created_at?: string
           email?: string | null
@@ -219,6 +221,7 @@ export type Database = {
           status?: string
         }
         Update: {
+          author_id?: string | null
           avatar_url?: string | null
           created_at?: string
           email?: string | null

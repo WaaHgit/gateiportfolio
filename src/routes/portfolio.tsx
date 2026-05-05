@@ -37,7 +37,7 @@ function PortfolioPage() {
       supabase
         .from("portfolio_items")
         .select("id,file_url,type,category,title,description")
-        .order("sort_order")
+        .eq("status", "published")
         .order("created_at", { ascending: false })
         .then(({ data }) => setItems((data as Item[]) ?? []));
     };

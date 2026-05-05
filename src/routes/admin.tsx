@@ -11,7 +11,7 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type Tab = "upload" | "portfolio" | "reviews" | "bookings" | "insights" | "links";
+type Tab = "upload" | "portfolio" | "reviews" | "bookings" | "insights" | "links" | "about";
 
 function AdminPage() {
   const { admin, user, loading, error, retry } = useIsAdmin();
@@ -70,7 +70,7 @@ function AdminPage() {
       </div>
 
       <nav className="mt-6 flex flex-wrap gap-2 border-b border-border">
-        {(["upload", "portfolio", "reviews", "bookings", "insights", "links"] as Tab[]).map((t) => (
+        {(["upload", "portfolio", "about", "reviews", "bookings", "insights", "links"] as Tab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={`uppercase-tracked px-4 py-3 -mb-px border-b-2 ${tab === t ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
             {t}
@@ -85,6 +85,7 @@ function AdminPage() {
         {tab === "bookings" && <BookingsPanel />}
         {tab === "insights" && <InsightsPanel />}
         {tab === "links" && <LinksPanel />}
+        {tab === "about" && <AboutPanel />}
       </div>
     </section>
   );
@@ -859,10 +860,31 @@ function BookingsPanel() {
   async function confirmAgreement(id: string) {
     setBusy(id);
     try {
+      const target = rows.find((r) => r.id === id);
+      if (target?.event_date) {
+        const { data: conflicts } = await supabase
+          .from("bookings")
+          .select("id,full_name,event_date")
+          .eq("event_date", target.event_date)
+          .eq("agreement_confirmed", true)
+          .neq("id", id);
+        if (conflicts && conflicts.length > 0) {
+          const names = conflicts.map((c) => c.full_name).join(", ");
+          const ok = confirm(
+            `⚠️ Date conflict: ${target.event_date} is already confirmed for ${names}.\n\n` +
+            `Click OK to change this booking's date now, or Cancel to abort.`
+          );
+          if (!ok) { setBusy(null); return; }
+          const newDate = prompt("Enter a new event date (YYYY-MM-DD):", target.event_date);
+          if (!newDate) { setBusy(null); return; }
+          await supabase.from("bookings").update({ event_date: newDate }).eq("id", id);
+        }
+      }
       const res = await confirmBookingAndAddToCalendar({ data: { booking_id: id } });
       if (!res.ok) { toast.error(res.reason ?? "Could not confirm"); return; }
       if (res.calendar_added) toast.success("Confirmed and added to calendar ✅");
       else toast.success(`Confirmed. ${res.reason ?? ""}`);
+      load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -870,9 +892,10 @@ function BookingsPanel() {
     }
   }
 
-  if (rows.length === 0) return <p className="text-muted-foreground text-sm">No bookings yet.</p>;
   return (
     <div className="space-y-4">
+      <BookingAnalytics rows={rows} />
+      {rows.length === 0 && <p className="text-muted-foreground text-sm">No bookings yet.</p>}
       {rows.map((b) => (
         <article key={b.id} className="border border-border bg-card p-5">
           <div className="flex items-start justify-between gap-4 flex-wrap">
