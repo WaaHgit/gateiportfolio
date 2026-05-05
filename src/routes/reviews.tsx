@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable/index";
 import { Star } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -27,11 +28,12 @@ type Review = {
 };
 
 const reviewSchema = z.object({
-  name: z.string().trim().min(1, "Name is required").max(80),
-  email: z.string().trim().email("Invalid email").max(320).optional().or(z.literal("")),
+  name: z.string().trim().min(1, "Full name is required").max(80),
   message: z.string().trim().min(1, "Write a short message").max(280),
-  rating: z.number().int().min(1).max(5),
+  rating: z.number().int().min(1, "Pick a star rating").max(5),
 });
+
+const PENDING_KEY = "gatei_pending_review";
 
 function ReviewsPage() {
   const [all, setAll] = useState<Review[]>([]);
@@ -48,9 +50,7 @@ function ReviewsPage() {
     setWindowReviews(list.slice(0, 3));
   }
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   // Loop window of 3 with fade
   useEffect(() => {
@@ -73,16 +73,12 @@ function ReviewsPage() {
         A rotating selection of recent client reviews. Leave yours below.
       </p>
 
-      {/* Looping window of 3 */}
       <div className="mt-12 grid md:grid-cols-3 gap-4 min-h-[200px]">
         {windowReviews.length === 0 && (
           <p className="text-muted-foreground text-sm md:col-span-3">No reviews yet — be the first.</p>
         )}
         {windowReviews.map((r) => (
-          <article
-            key={r.id}
-            className="border border-border bg-card p-6 animate-in-fade flex flex-col"
-          >
+          <article key={r.id} className="border border-border bg-card p-6 animate-in-fade flex flex-col">
             <div className="flex items-center gap-3">
               {r.avatar_url ? (
                 <img src={r.avatar_url} alt={r.name} className="w-10 h-10 rounded-full object-cover" />
@@ -103,6 +99,9 @@ function ReviewsPage() {
 
       <div className="mt-20 border-t border-border pt-12">
         <h2 className="font-display text-3xl">Leave a review</h2>
+        <p className="text-sm text-muted-foreground mt-2">
+          You'll be asked to sign in with Google before your review is sent — this keeps reviews authentic and prevents spam.
+        </p>
         <ReviewForm onSubmitted={load} />
       </div>
     </section>
@@ -132,74 +131,95 @@ function Stars({ value, onChange }: { value: number; onChange?: (n: number) => v
 
 function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
-  const [rating, setRating] = useState(5);
+  const [rating, setRating] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
-  async function signInGoogle() {
-    const redirectTo = `${window.location.origin}/reviews`;
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo },
-    });
-    if (error) toast.error(error.message);
-  }
-
-  // Pull google profile if signed in
+  // If user just returned from Google auth with a pending draft, submit it.
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      const u = data.user;
-      if (!u) return;
-      const meta = (u.user_metadata ?? {}) as Record<string, unknown>;
-      const fullName = (meta.full_name as string) || (meta.name as string) || "";
-      const picture = (meta.avatar_url as string) || (meta.picture as string) || null;
-      if (fullName && !name) setName(fullName);
-      if (u.email && !email) setEmail(u.email);
-      if (picture) setAvatarUrl(picture);
+    (async () => {
+      const raw = sessionStorage.getItem(PENDING_KEY);
+      if (!raw) return;
+      const { data: sess } = await supabase.auth.getSession();
+      if (!sess.session) return;
+      try {
+        const draft = JSON.parse(raw) as { name: string; message: string; rating: number };
+        sessionStorage.removeItem(PENDING_KEY);
+        await submitToDb(draft, sess.session.user);
+        onSubmitted();
+      } catch {
+        sessionStorage.removeItem(PENDING_KEY);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function submitToDb(
+    payload: { name: string; message: string; rating: number },
+    user: { id: string; user_metadata: Record<string, unknown> | undefined }
+  ) {
+    const { error } = await supabase.from("reviews").insert({
+      author_id: user.id,
+      name: payload.name,
+      message: payload.message,
+      rating: payload.rating,
+      email: null,
+      avatar_url: null,
+      status: "pending",
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (error) {
+      if (error.message?.includes("Review limit reached")) {
+        toast.error("You've reached the limit of 2 reviews per account.");
+      } else {
+        toast.error(error.message);
+      }
+      return;
+    }
+    toast.success("Thank you for your feedback");
+    setName("");
+    setMessage("");
+    setRating(0);
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const parsed = reviewSchema.safeParse({ name, email, message, rating });
+    const parsed = reviewSchema.safeParse({ name, message, rating });
     if (!parsed.success) {
       toast.error(parsed.error.issues[0]?.message ?? "Invalid input");
       return;
     }
     setBusy(true);
+
     const { data: sess } = await supabase.auth.getSession();
-    const isAuthed = !!sess.session;
-    const { error } = await supabase.from("reviews").insert({
-      name: parsed.data.name,
-      email: isAuthed ? (parsed.data.email || null) : null,
-      message: parsed.data.message,
-      rating: parsed.data.rating,
-      avatar_url: isAuthed ? avatarUrl : null,
-      status: "pending",
-    });
-    setBusy(false);
-    if (error) {
-      toast.error(error.message);
+    if (!sess.session) {
+      // Stash draft; redirect to Google. On return useEffect submits.
+      sessionStorage.setItem(PENDING_KEY, JSON.stringify(parsed.data));
+      const result = await lovable.auth.signInWithOAuth("google", {
+        redirect_uri: window.location.origin + "/reviews",
+      });
+      if (result.error) {
+        toast.error("Sign-in failed. Please try again.");
+        sessionStorage.removeItem(PENDING_KEY);
+        setBusy(false);
+        return;
+      }
+      // Browser redirects; nothing more to do.
       return;
     }
-    toast.success("thank you for your feedback");
-    setName("");
-    setEmail("");
-    setMessage("");
-    setRating(5);
+
+    await submitToDb(parsed.data, sess.session.user);
+    setBusy(false);
     onSubmitted();
   }
 
   return (
     <form onSubmit={submit} className="mt-6 grid gap-5 max-w-xl">
       <div className="flex items-center justify-between">
-        <span className="uppercase-tracked text-muted-foreground text-xs">Rating</span>
+        <span className="uppercase-tracked text-muted-foreground text-xs">Rating *</span>
         <Stars value={rating} onChange={setRating} />
       </div>
       <label className="block">
-        <span className="uppercase-tracked text-xs text-muted-foreground">Name *</span>
+        <span className="uppercase-tracked text-xs text-muted-foreground">Full name *</span>
         <input
           required
           maxLength={80}
@@ -209,19 +229,7 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
         />
       </label>
       <label className="block">
-        <span className="uppercase-tracked text-xs text-muted-foreground">
-          Email (optional)
-        </span>
-        <input
-          type="email"
-          maxLength={320}
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="mt-2 w-full bg-transparent border-b border-border focus:border-primary outline-none py-2"
-        />
-      </label>
-      <label className="block">
-        <span className="uppercase-tracked text-xs text-muted-foreground">Review (max 280 chars)</span>
+        <span className="uppercase-tracked text-xs text-muted-foreground">Your review * (max 280 chars)</span>
         <textarea
           required
           maxLength={280}
@@ -233,29 +241,16 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
         <span className="text-xs text-muted-foreground">{message.length}/280</span>
       </label>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="submit"
-          disabled={busy}
-          className="uppercase-tracked bg-primary text-primary-foreground px-6 py-3 disabled:opacity-50"
-        >
-          {busy ? "Sending…" : "Submit review"}
-        </button>
-        {avatarUrl ? (
-          <span className="flex items-center gap-2 text-xs text-muted-foreground">
-            <img src={avatarUrl} className="w-6 h-6 rounded-full" alt="" />
-            Google photo attached
-          </span>
-        ) : (
-          <button
-            type="button"
-            onClick={signInGoogle}
-            className="uppercase-tracked text-xs border border-border px-4 py-2 hover:border-primary"
-          >
-            Sign in with Google (optional)
-          </button>
-        )}
-      </div>
+      <button
+        type="submit"
+        disabled={busy}
+        className="uppercase-tracked bg-primary text-primary-foreground px-6 py-3 disabled:opacity-50 self-start"
+      >
+        {busy ? "Continuing…" : "Submit review"}
+      </button>
+      <p className="text-xs text-muted-foreground">
+        Each account is limited to 2 reviews total.
+      </p>
     </form>
   );
 }
