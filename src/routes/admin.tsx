@@ -860,10 +860,31 @@ function BookingsPanel() {
   async function confirmAgreement(id: string) {
     setBusy(id);
     try {
+      const target = rows.find((r) => r.id === id);
+      if (target?.event_date) {
+        const { data: conflicts } = await supabase
+          .from("bookings")
+          .select("id,full_name,event_date")
+          .eq("event_date", target.event_date)
+          .eq("agreement_confirmed", true)
+          .neq("id", id);
+        if (conflicts && conflicts.length > 0) {
+          const names = conflicts.map((c) => c.full_name).join(", ");
+          const ok = confirm(
+            `⚠️ Date conflict: ${target.event_date} is already confirmed for ${names}.\n\n` +
+            `Click OK to change this booking's date now, or Cancel to abort.`
+          );
+          if (!ok) { setBusy(null); return; }
+          const newDate = prompt("Enter a new event date (YYYY-MM-DD):", target.event_date);
+          if (!newDate) { setBusy(null); return; }
+          await supabase.from("bookings").update({ event_date: newDate }).eq("id", id);
+        }
+      }
       const res = await confirmBookingAndAddToCalendar({ data: { booking_id: id } });
       if (!res.ok) { toast.error(res.reason ?? "Could not confirm"); return; }
       if (res.calendar_added) toast.success("Confirmed and added to calendar ✅");
       else toast.success(`Confirmed. ${res.reason ?? ""}`);
+      load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
