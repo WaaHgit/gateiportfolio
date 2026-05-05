@@ -11,7 +11,7 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type Tab = "upload" | "portfolio" | "reviews" | "bookings" | "insights" | "links";
+type Tab = "upload" | "portfolio" | "reviews" | "bookings" | "insights" | "links" | "about";
 
 function AdminPage() {
   const { admin, user, loading, error, retry } = useIsAdmin();
@@ -70,7 +70,7 @@ function AdminPage() {
       </div>
 
       <nav className="mt-6 flex flex-wrap gap-2 border-b border-border">
-        {(["upload", "portfolio", "reviews", "bookings", "insights", "links"] as Tab[]).map((t) => (
+        {(["upload", "portfolio", "about", "reviews", "bookings", "insights", "links"] as Tab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={`uppercase-tracked px-4 py-3 -mb-px border-b-2 ${tab === t ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
             {t}
@@ -85,6 +85,7 @@ function AdminPage() {
         {tab === "bookings" && <BookingsPanel />}
         {tab === "insights" && <InsightsPanel />}
         {tab === "links" && <LinksPanel />}
+        {tab === "about" && <AboutPanel />}
       </div>
     </section>
   );
