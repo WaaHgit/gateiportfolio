@@ -895,7 +895,8 @@ function BookingsPanel() {
   if (rows.length === 0) return <p className="text-muted-foreground text-sm">No bookings yet.</p>;
   return (
     <div className="space-y-4">
-      {rows.map((b) => (
+      <BookingAnalytics rows={rows} />
+      {rows.length === 0 && <p className="text-muted-foreground text-sm">No bookings yet.</p>}
         <article key={b.id} className="border border-border bg-card p-5">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
