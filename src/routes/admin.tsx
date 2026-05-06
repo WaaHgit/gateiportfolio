@@ -1152,6 +1152,111 @@ function Stat({ label, value }: { label: string; value: number }) {
   );
 }
 
+/* ============== ABOUT PHOTOS ============== */
+function AboutPanel() {
+  const [photo1, setPhoto1] = useState<string | null>(null);
+  const [photo2, setPhoto2] = useState<string | null>(null);
+  const [busy, setBusy] = useState<1 | 2 | null>(null);
+  const ref1 = useRef<HTMLInputElement>(null);
+  const ref2 = useRef<HTMLInputElement>(null);
+
+  async function load() {
+    const { data } = await supabase
+      .from("app_settings")
+      .select("key,value")
+      .in("key", ["public_about_photo_1", "public_about_photo_2"]);
+    const map = new Map((data ?? []).map((r: { key: string; value: string }) => [r.key, r.value]));
+    setPhoto1(map.get("public_about_photo_1") || null);
+    setPhoto2(map.get("public_about_photo_2") || null);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function upload(slot: 1 | 2, file: File) {
+    if (!file.type.startsWith("image/")) { toast.error("Image only"); return; }
+    setBusy(slot);
+    try {
+      const ext = file.name.split(".").pop() ?? "jpg";
+      const path = `about/photo-${slot}-${crypto.randomUUID()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("media").upload(path, file, {
+        contentType: file.type, cacheControl: "31536000", upsert: false,
+      });
+      if (upErr) throw upErr;
+      const { data: pub } = supabase.storage.from("media").getPublicUrl(path);
+      const key = `public_about_photo_${slot}`;
+      const { error } = await supabase.from("app_settings").upsert({ key, value: pub.publicUrl, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      toast.success("About photo updated");
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function clearSlot(slot: 1 | 2) {
+    if (!confirm("Remove this photo from the About page?")) return;
+    const key = `public_about_photo_${slot}`;
+    const { error } = await supabase.from("app_settings").delete().eq("key", key);
+    if (error) toast.error(error.message); else { toast.success("Removed"); load(); }
+  }
+
+  return (
+    <div className="space-y-6 max-w-3xl">
+      <p className="text-sm text-muted-foreground">Upload the two photos that appear in cinematic reveal on the About page. JPEG/PNG/WebP — original quality.</p>
+      <div className="grid md:grid-cols-2 gap-6">
+        {([1, 2] as const).map((slot) => {
+          const url = slot === 1 ? photo1 : photo2;
+          const inputRef = slot === 1 ? ref1 : ref2;
+          return (
+            <div key={slot} className="border border-border bg-card p-4 space-y-3">
+              <p className="uppercase-tracked text-primary text-xs">Photo {slot}</p>
+              <div className="aspect-[4/5] bg-secondary border border-border overflow-hidden flex items-center justify-center">
+                {url ? <img src={url} alt={`About ${slot}`} className="w-full h-full object-cover" /> : <span className="text-xs text-muted-foreground">No photo</span>}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => inputRef.current?.click()} disabled={busy === slot}
+                  className="uppercase-tracked text-xs bg-primary text-primary-foreground px-3 py-2 disabled:opacity-50">
+                  {busy === slot ? "Uploading…" : url ? "Replace" : "Upload"}
+                </button>
+                {url && (
+                  <button onClick={() => clearSlot(slot)} className="uppercase-tracked text-xs border border-border px-3 py-2 hover:border-destructive">Remove</button>
+                )}
+                <input ref={inputRef} type="file" accept="image/*" className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(slot, f); e.target.value = ""; }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ============== BOOKING ANALYTICS ============== */
+function BookingAnalytics({ rows }: { rows: BookingRow[] }) {
+  const stats = useMemo(() => {
+    const total = rows.length;
+    const confirmed = rows.filter((r) => r.agreement_confirmed).length;
+    const pending = rows.filter((r) => r.status === "new" || r.status === "contacted").length;
+    const declined = rows.filter((r) => r.status === "declined").length;
+    const done = rows.filter((r) => r.status === "done").length;
+    const upcoming = rows.filter((r) => r.event_date && new Date(r.event_date) >= new Date()).length;
+    return { total, confirmed, pending, declined, done, upcoming };
+  }, [rows]);
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-6">
+      <Stat label="Total" value={stats.total} />
+      <Stat label="Pending" value={stats.pending} />
+      <Stat label="Confirmed" value={stats.confirmed} />
+      <Stat label="Upcoming" value={stats.upcoming} />
+      <Stat label="Done" value={stats.done} />
+      <Stat label="Declined" value={stats.declined} />
+    </div>
+  );
+}
+
 /* ============== SOCIAL LINKS ============== */
 function LinksPanel() {
   const [rows, setRows] = useState<{ id: string; platform: string; label: string; url: string; is_visible: boolean }[]>([]);
