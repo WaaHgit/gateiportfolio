@@ -1148,11 +1148,14 @@ function InsightsPanel() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value, icon }: { label: string; value: number; icon?: React.ReactNode }) {
   return (
-    <div className="border border-border bg-card p-4">
-      <p className="uppercase-tracked text-muted-foreground text-[11px]">{label}</p>
-      <p className="font-display text-3xl mt-2 tabular-nums">{value}</p>
+    <div className="border border-border bg-card p-5 hover:border-primary/50 transition-colors group">
+      <div className="flex items-center justify-between text-muted-foreground group-hover:text-primary transition-colors">
+        <p className="uppercase-tracked text-[11px]">{label}</p>
+        {icon}
+      </div>
+      <p className="font-display text-4xl mt-3 tabular-nums">{value.toLocaleString()}</p>
     </div>
   );
 }
