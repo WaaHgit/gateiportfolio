@@ -207,6 +207,10 @@ function UploadPanel() {
     if (created.length === 0) return;
     setStaged((prev) => [...created, ...prev]);
     toast.success("Preview ready — add details, then save draft or upload");
+    // Mobile fix: ensure user sees the preview right after picking files
+    requestAnimationFrame(() => {
+      stagedSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   function updateStaged(id: string, patch: Partial<Pick<StagedItem, "title" | "description" | "category">>) {
