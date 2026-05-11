@@ -510,9 +510,9 @@ function UploadPanel() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {recent.map((it) => (
               <div key={it.id} className="border border-border bg-card flex flex-col">
-                <div className="aspect-square w-full overflow-hidden bg-secondary flex items-center justify-center">
-                  {it.type === "image" && <img src={it.file_url} alt={it.title ?? ""} className="w-full h-full object-cover" />}
-                  {it.type === "video" && <video src={it.file_url} muted playsInline className="w-full h-full object-cover" />}
+                <div className="aspect-square w-full overflow-hidden bg-black flex items-center justify-center">
+                  {it.type === "image" && <img src={it.file_url} alt={it.title ?? ""} loading="lazy" className="max-w-full max-h-full object-contain" />}
+                  {it.type === "video" && <video src={it.file_url} muted playsInline preload="metadata" className="max-w-full max-h-full object-contain" />}
                   {it.type === "audio" && <span className="text-primary uppercase-tracked text-xs">AUDIO</span>}
                 </div>
                 <div className="p-3 space-y-2">
