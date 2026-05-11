@@ -1077,10 +1077,10 @@ function InsightsPanel() {
       </div>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <Stat label="Page views" value={totals.views} />
-        <Stat label="Link clicks" value={totals.clicks} />
-        <Stat label="Bookings" value={totals.bookings} />
-        <Stat label="Total events" value={events.length} />
+        <Stat label="Page views" value={totals.views} icon={<Eye size={16} />} />
+        <Stat label="Link clicks" value={totals.clicks} icon={<MousePointerClick size={16} />} />
+        <Stat label="Bookings" value={totals.bookings} icon={<CalendarDays size={16} />} />
+        <Stat label="Total events" value={events.length} icon={<Activity size={16} />} />
       </div>
 
       <div>
