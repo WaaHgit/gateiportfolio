@@ -134,6 +134,7 @@ function UploadPanel() {
   const replaceRef = useRef<HTMLInputElement>(null);
   const replacingId = useRef<string | null>(null);
   const stagedRef = useRef<StagedItem[]>([]);
+  const stagedSectionRef = useRef<HTMLDivElement>(null);
 
   function detectType(file: File): MediaKind | null {
     if (file.type.startsWith("image/")) return "image";
