@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useIsAdmin } from "@/lib/auth";
 import { toast } from "sonner";
-import { Trash2, UploadCloud, LogOut, Loader2, Star, CalendarCheck, BarChart3 } from "lucide-react";
+import { Trash2, UploadCloud, LogOut, Loader2, Star, CalendarCheck, BarChart3, Eye, MousePointerClick, CalendarDays, Activity } from "lucide-react";
 import { confirmBookingAndAddToCalendar } from "@/server/calendar.functions";
 
 export const Route = createFileRoute("/admin")({
@@ -134,6 +134,7 @@ function UploadPanel() {
   const replaceRef = useRef<HTMLInputElement>(null);
   const replacingId = useRef<string | null>(null);
   const stagedRef = useRef<StagedItem[]>([]);
+  const stagedSectionRef = useRef<HTMLDivElement>(null);
 
   function detectType(file: File): MediaKind | null {
     if (file.type.startsWith("image/")) return "image";
@@ -206,6 +207,10 @@ function UploadPanel() {
     if (created.length === 0) return;
     setStaged((prev) => [...created, ...prev]);
     toast.success("Preview ready — add details, then save draft or upload");
+    // Mobile fix: ensure user sees the preview right after picking files
+    requestAnimationFrame(() => {
+      stagedSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   function updateStaged(id: string, patch: Partial<Pick<StagedItem, "title" | "description" | "category">>) {
@@ -387,7 +392,7 @@ function UploadPanel() {
         </aside>
       </div>
 
-      <div>
+      <div ref={stagedSectionRef}>
         <div className="flex items-center justify-between gap-3 border-b border-border pb-2 mb-4 flex-wrap">
           <div>
             <h3 className="font-display text-xl">Ready to upload</h3>
@@ -405,13 +410,13 @@ function UploadPanel() {
         ) : (
           <div className="space-y-4">
             {staged.map((item) => (
-              <article key={item.id} className="border border-border bg-card p-4 grid gap-4 lg:grid-cols-[260px_1fr]">
-                <div className="overflow-hidden border border-border bg-secondary min-h-[200px] flex items-center justify-center">
+              <article key={item.id} className="border border-border bg-card p-4 grid gap-4 md:grid-cols-[260px_1fr]">
+                <div className="overflow-hidden border border-border bg-black min-h-[200px] flex items-center justify-center">
                   {item.type === "image" && item.previewUrl && (
-                    <img src={item.previewUrl} alt={item.title || item.file.name} className="w-full h-full object-cover" />
+                    <img src={item.previewUrl} alt={item.title || item.file.name} className="max-h-[260px] w-auto max-w-full object-contain" />
                   )}
                   {item.type === "video" && item.previewUrl && (
-                    <video src={item.previewUrl} controls playsInline className="w-full h-full object-cover" />
+                    <video src={item.previewUrl} controls playsInline className="max-h-[260px] w-full object-contain bg-black" />
                   )}
                   {item.type === "audio" && item.previewUrl && (
                     <div className="w-full px-4">
@@ -505,9 +510,9 @@ function UploadPanel() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {recent.map((it) => (
               <div key={it.id} className="border border-border bg-card flex flex-col">
-                <div className="aspect-square w-full overflow-hidden bg-secondary flex items-center justify-center">
-                  {it.type === "image" && <img src={it.file_url} alt={it.title ?? ""} className="w-full h-full object-cover" />}
-                  {it.type === "video" && <video src={it.file_url} muted playsInline className="w-full h-full object-cover" />}
+                <div className="aspect-square w-full overflow-hidden bg-black flex items-center justify-center">
+                  {it.type === "image" && <img src={it.file_url} alt={it.title ?? ""} loading="lazy" className="max-w-full max-h-full object-contain" />}
+                  {it.type === "video" && <video src={it.file_url} muted playsInline preload="metadata" className="max-w-full max-h-full object-contain" />}
                   {it.type === "audio" && <span className="text-primary uppercase-tracked text-xs">AUDIO</span>}
                 </div>
                 <div className="p-3 space-y-2">
@@ -1072,10 +1077,10 @@ function InsightsPanel() {
       </div>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <Stat label="Page views" value={totals.views} />
-        <Stat label="Link clicks" value={totals.clicks} />
-        <Stat label="Bookings" value={totals.bookings} />
-        <Stat label="Total events" value={events.length} />
+        <Stat label="Page views" value={totals.views} icon={<Eye size={16} />} />
+        <Stat label="Link clicks" value={totals.clicks} icon={<MousePointerClick size={16} />} />
+        <Stat label="Bookings" value={totals.bookings} icon={<CalendarDays size={16} />} />
+        <Stat label="Total events" value={events.length} icon={<Activity size={16} />} />
       </div>
 
       <div>
@@ -1143,11 +1148,14 @@ function InsightsPanel() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value, icon }: { label: string; value: number; icon?: React.ReactNode }) {
   return (
-    <div className="border border-border bg-card p-4">
-      <p className="uppercase-tracked text-muted-foreground text-[11px]">{label}</p>
-      <p className="font-display text-3xl mt-2 tabular-nums">{value}</p>
+    <div className="border border-border bg-card p-5 hover:border-primary/50 transition-colors group">
+      <div className="flex items-center justify-between text-muted-foreground group-hover:text-primary transition-colors">
+        <p className="uppercase-tracked text-[11px]">{label}</p>
+        {icon}
+      </div>
+      <p className="font-display text-4xl mt-3 tabular-nums">{value.toLocaleString()}</p>
     </div>
   );
 }

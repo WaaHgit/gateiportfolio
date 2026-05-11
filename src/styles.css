@@ -167,3 +167,35 @@ select:focus {
 }
 input::placeholder, textarea::placeholder { color: oklch(0.82 0.14 75 / 0.35); }
 
+/* Dark, readable dropdown options across browsers that honor it */
+select option,
+select optgroup {
+  background-color: oklch(0.09 0 0);
+  color: oklch(0.96 0.01 85);
+}
+select option:checked,
+select option:hover {
+  background-color: oklch(0.82 0.14 75 / 0.18);
+  color: oklch(0.96 0.01 85);
+}
+
+/* Cinematic media motion */
+@keyframes media-rise {
+  from { opacity: 0; transform: translateY(18px) scale(0.985); filter: blur(6px); }
+  to   { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+.media-rise { animation: media-rise 0.9s cubic-bezier(.2,.7,.2,1) both; }
+
+/* Soft pan/parallax-ish drift for hero images on hover */
+@keyframes media-drift {
+  0%   { transform: scale(1.02) translateY(0); }
+  50%  { transform: scale(1.05) translateY(-1.2%); }
+  100% { transform: scale(1.02) translateY(0); }
+}
+.media-drift { animation: media-drift 18s ease-in-out infinite; }
+
+/* Reduced motion respect */
+@media (prefers-reduced-motion: reduce) {
+  .media-rise, .media-drift { animation: none !important; }
+}
+

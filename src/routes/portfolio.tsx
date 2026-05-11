@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Headphones, X } from "lucide-react";
+import { Headphones, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { FadeInOnScroll } from "@/components/FadeInOnScroll";
 import { MediaVideo } from "@/components/MediaVideo";
 
@@ -30,7 +30,7 @@ type Cat = (typeof CATEGORIES)[number];
 function PortfolioPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [cat, setCat] = useState<Cat>("all");
-  const [active, setActive] = useState<Item | null>(null);
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
   useEffect(() => {
     const load = () => {
@@ -76,24 +76,26 @@ function PortfolioPage() {
       {filtered.length === 0 ? (
         <p className="text-muted-foreground mt-16 text-sm">No items in this category yet.</p>
       ) : (
-        <div className="mt-8 columns-2 md:columns-3 lg:columns-4 gap-3 [column-fill:_balance]">
+        <div className="mt-8 columns-1 sm:columns-2 md:columns-3 lg:columns-4 gap-3 [column-fill:_balance]">
           {filtered.map((it, idx) => (
             <FadeInOnScroll key={it.id} delay={Math.min(idx * 40, 300)} className="mb-3 break-inside-avoid">
               <button
-                onClick={() => setActive(it)}
-                className="group relative w-full overflow-hidden border border-border bg-card text-left block"
+                onClick={() => setActiveIdx(idx)}
+                className="group relative w-full overflow-hidden border border-border bg-card text-left block media-rise"
               >
                 {it.type === "image" && (
                   <img
                     src={it.file_url}
                     alt={it.title ?? ""}
                     loading="lazy"
-                    className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-700"
+                    decoding="async"
+                    className="w-full h-auto block group-hover:scale-[1.02] transition-transform duration-700"
                   />
                 )}
                 {it.type === "video" && (
-                  <div className="aspect-video">
-                    <MediaVideo src={it.file_url} autoPreview className="w-full h-full" />
+                  // Natural aspect — letterbox if needed, never crop portrait clips
+                  <div className="bg-black">
+                    <MediaVideo src={it.file_url} autoPreview contain className="w-full" />
                   </div>
                 )}
                 {it.type === "audio" && (
@@ -113,25 +115,108 @@ function PortfolioPage() {
         </div>
       )}
 
-      {active && <Lightbox item={active} onClose={() => setActive(null)} />}
+      {activeIdx !== null && filtered[activeIdx] && (
+        <Lightbox
+          items={filtered}
+          index={activeIdx}
+          onIndex={setActiveIdx}
+          onClose={() => setActiveIdx(null)}
+        />
+      )}
     </section>
   );
 }
 
-function Lightbox({ item, onClose }: { item: Item; onClose: () => void }) {
+function Lightbox({
+  items,
+  index,
+  onIndex,
+  onClose,
+}: {
+  items: Item[];
+  index: number;
+  onIndex: (i: number) => void;
+  onClose: () => void;
+}) {
+  const item = items[index];
+  const touchStart = useRef<number | null>(null);
+
+  const next = useCallback(() => onIndex((index + 1) % items.length), [index, items.length, onIndex]);
+  const prev = useCallback(() => onIndex((index - 1 + items.length) % items.length), [index, items.length, onIndex]);
+
   useEffect(() => {
-    const h = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      else if (e.key === "ArrowRight") next();
+      else if (e.key === "ArrowLeft") prev();
+    };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [onClose]);
+  }, [onClose, next, prev]);
+
+  function onTouchStart(e: React.TouchEvent) { touchStart.current = e.touches[0].clientX; }
+  function onTouchEnd(e: React.TouchEvent) {
+    if (touchStart.current == null) return;
+    const dx = e.changedTouches[0].clientX - touchStart.current;
+    if (Math.abs(dx) > 50) (dx < 0 ? next : prev)();
+    touchStart.current = null;
+  }
+
+  // Cap dot count for very large galleries
+  const maxDots = 12;
+  const dotItems = items.length <= maxDots
+    ? items.map((_, i) => i)
+    : (() => {
+        const half = Math.floor(maxDots / 2);
+        let start = Math.max(0, index - half);
+        const end = Math.min(items.length, start + maxDots);
+        start = Math.max(0, end - maxDots);
+        return Array.from({ length: end - start }, (_, k) => start + k);
+      })();
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4 animate-in-fade" onClick={onClose}>
-      <button className="absolute top-4 right-4 text-white" onClick={onClose} aria-label="Close"><X size={28} /></button>
-      <div className="max-w-6xl w-full max-h-[90vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
-        {item.type === "image" && <img src={item.file_url} alt={item.title ?? ""} className="max-h-[80vh] w-auto object-contain" />}
+    <div
+      className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4 animate-in-fade"
+      onClick={onClose}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
+      <button className="absolute top-4 right-4 text-white z-10" onClick={onClose} aria-label="Close"><X size={28} /></button>
+
+      {items.length > 1 && (
+        <>
+          <button
+            onClick={(e) => { e.stopPropagation(); prev(); }}
+            aria-label="Previous"
+            className="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full bg-black/60 backdrop-blur border border-white/30 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
+          >
+            <ChevronLeft size={22} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); next(); }}
+            aria-label="Next"
+            className="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full bg-black/60 backdrop-blur border border-white/30 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
+          >
+            <ChevronRight size={22} />
+          </button>
+        </>
+      )}
+
+      <div
+        key={item.id}
+        className="max-w-6xl w-full max-h-[88vh] flex flex-col items-center animate-in-fade"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {item.type === "image" && (
+          <img
+            src={item.file_url}
+            alt={item.title ?? ""}
+            className="max-h-[78vh] max-w-full w-auto h-auto object-contain"
+          />
+        )}
         {item.type === "video" && (
-          <div className="w-full max-w-5xl aspect-video">
-            <MediaVideo src={item.file_url} className="w-full h-full" />
+          <div className="w-full max-w-5xl max-h-[78vh] flex items-center justify-center">
+            <MediaVideo src={item.file_url} contain className="max-h-[78vh] w-full" />
           </div>
         )}
         {item.type === "audio" && (
@@ -142,9 +227,25 @@ function Lightbox({ item, onClose }: { item: Item; onClose: () => void }) {
           </div>
         )}
         {(item.title || item.description) && (
-          <div className="mt-4 text-center">
+          <div className="mt-4 text-center px-4">
             {item.title && <h3 className="font-display text-2xl text-white">{item.title}</h3>}
-            {item.description && <p className="text-sm text-white/70 mt-1 max-w-2xl">{item.description}</p>}
+            {item.description && <p className="text-sm text-white/70 mt-1 max-w-2xl mx-auto">{item.description}</p>}
+          </div>
+        )}
+
+        {items.length > 1 && (
+          <div className="mt-5 flex items-center justify-center gap-2" onClick={(e) => e.stopPropagation()}>
+            {dotItems[0] > 0 && <span className="text-white/40 text-xs">…</span>}
+            {dotItems.map((i) => (
+              <button
+                key={i}
+                onClick={(e) => { e.stopPropagation(); onIndex(i); }}
+                aria-label={`Go to item ${i + 1}`}
+                className={`transition-all rounded-full ${i === index ? "w-2.5 h-2.5 bg-primary" : "w-2 h-2 bg-white/40 hover:bg-white/70"}`}
+              />
+            ))}
+            {dotItems[dotItems.length - 1] < items.length - 1 && <span className="text-white/40 text-xs">…</span>}
+            <span className="ml-3 text-white/60 text-xs tabular-nums">{index + 1}/{items.length}</span>
           </div>
         )}
       </div>
