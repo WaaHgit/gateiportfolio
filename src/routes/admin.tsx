@@ -392,7 +392,7 @@ function UploadPanel() {
         </aside>
       </div>
 
-      <div>
+      <div ref={stagedSectionRef}>
         <div className="flex items-center justify-between gap-3 border-b border-border pb-2 mb-4 flex-wrap">
           <div>
             <h3 className="font-display text-xl">Ready to upload</h3>
@@ -410,13 +410,13 @@ function UploadPanel() {
         ) : (
           <div className="space-y-4">
             {staged.map((item) => (
-              <article key={item.id} className="border border-border bg-card p-4 grid gap-4 lg:grid-cols-[260px_1fr]">
-                <div className="overflow-hidden border border-border bg-secondary min-h-[200px] flex items-center justify-center">
+              <article key={item.id} className="border border-border bg-card p-4 grid gap-4 md:grid-cols-[260px_1fr]">
+                <div className="overflow-hidden border border-border bg-black min-h-[200px] flex items-center justify-center">
                   {item.type === "image" && item.previewUrl && (
-                    <img src={item.previewUrl} alt={item.title || item.file.name} className="w-full h-full object-cover" />
+                    <img src={item.previewUrl} alt={item.title || item.file.name} className="max-h-[260px] w-auto max-w-full object-contain" />
                   )}
                   {item.type === "video" && item.previewUrl && (
-                    <video src={item.previewUrl} controls playsInline className="w-full h-full object-cover" />
+                    <video src={item.previewUrl} controls playsInline className="max-h-[260px] w-full object-contain bg-black" />
                   )}
                   {item.type === "audio" && item.previewUrl && (
                     <div className="w-full px-4">
