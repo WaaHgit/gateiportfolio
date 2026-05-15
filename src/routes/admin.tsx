@@ -16,7 +16,11 @@ type Tab = "upload" | "portfolio" | "reviews" | "bookings" | "insights" | "links
 function AdminPage() {
   const { admin, user, loading, error, retry } = useIsAdmin();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>("upload");
+  const [tab, setTab] = useState<Tab>(() => {
+    if (typeof window === "undefined") return "upload";
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return (["upload","portfolio","reviews","bookings","insights","links","about"] as Tab[]).includes(t as Tab) ? (t as Tab) : "upload";
+  });
 
   useEffect(() => {
     if (loading) return;
