@@ -19,11 +19,14 @@ export const submitBooking = createServerFn({ method: "POST" })
   .inputValidator((data) => BookingSchema.parse(data))
   .handler(async ({ data }) => {
     const payload = { ...data, preferred_date: data.preferred_date ?? null, status: "pending" };
-    const { error } = await supabaseAdmin.from("bookings").insert(payload);
+    const { data: inserted, error } = await supabaseAdmin
+      .from("bookings")
+      .insert(payload)
+      .select("id")
+      .single();
     if (error) throw new Error(`Could not save booking: ${error.message}`);
-    // Best-effort notify; do not fail the user submission if Docs/Gmail fail.
     try {
-      await notifyBooking(payload);
+      await notifyBooking({ ...payload, id: inserted?.id ?? null });
     } catch (e) {
       console.error("[booking-notify] failed:", e);
     }
