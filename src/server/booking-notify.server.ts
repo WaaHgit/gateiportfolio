@@ -42,6 +42,7 @@ async function getOrCreateMasterDocId(): Promise<string> {
 }
 
 export type BookingPayload = {
+  id?: string | null;
   full_name: string;
   email: string;
   phone: string;
@@ -49,6 +50,8 @@ export type BookingPayload = {
   description: string;
   preferred_date: string | null;
 };
+
+const ADMIN_BASE_URL = "https://gateiportfolio.lovable.app";
 
 function buildEntry(b: BookingPayload): string {
   const ts = new Date().toLocaleString("en-GB", { timeZone: "Africa/Nairobi" });
@@ -98,6 +101,7 @@ function b64url(s: string) {
 async function sendNotificationEmail(b: BookingPayload, docId: string) {
   const { lov, gmailKey } = authHeaders();
   const docUrl = `https://docs.google.com/document/d/${docId}/edit`;
+  const editUrl = b.id ? `${ADMIN_BASE_URL}/admin?tab=bookings&id=${b.id}#booking-${b.id}` : `${ADMIN_BASE_URL}/admin?tab=bookings`;
   const replySubject = encodeURIComponent(`Re: Your GATEI booking — ${b.service}`);
   const replyBody = encodeURIComponent(
     `Hi ${b.full_name},\n\nThanks for reaching out to GATEI regarding "${b.service}".\n\n` +
@@ -116,8 +120,9 @@ async function sendNotificationEmail(b: BookingPayload, docId: string) {
 </table>
 <div style="margin-top:20px;padding:16px;background:#f6f6f6;border-radius:6px;white-space:pre-wrap;font-size:14px">${escapeHtml(b.description)}</div>
 <div style="margin-top:28px;display:flex;gap:12px;flex-wrap:wrap">
-  <a href="${replyLink}" style="background:#111;color:#fff;text-decoration:none;padding:12px 20px;border-radius:4px;display:inline-block;font-size:13px;letter-spacing:.06em;text-transform:uppercase">Reply to client</a>
-  <a href="${docUrl}" style="background:#fff;color:#111;border:1px solid #111;text-decoration:none;padding:12px 20px;border-radius:4px;display:inline-block;font-size:13px;letter-spacing:.06em;text-transform:uppercase">Open bookings doc</a>
+  <a href="${editUrl}" style="background:#111;color:#fff;text-decoration:none;padding:12px 20px;border-radius:4px;display:inline-block;font-size:13px;letter-spacing:.06em;text-transform:uppercase">Edit booking</a>
+  <a href="${replyLink}" style="background:#fff;color:#111;border:1px solid #111;text-decoration:none;padding:12px 20px;border-radius:4px;display:inline-block;font-size:13px;letter-spacing:.06em;text-transform:uppercase">Reply to client</a>
+  <a href="${docUrl}" style="color:#666;text-decoration:none;padding:12px 0;display:inline-block;font-size:12px;letter-spacing:.06em;text-transform:uppercase">Bookings log</a>
 </div>
 <p style="color:#999;font-size:11px;margin-top:32px">GATEI bookings · automated notification</p>
 </body></html>`;

@@ -43,6 +43,7 @@ export type Database = {
           event_time: string | null
           full_name: string
           id: string
+          internal_notes: string | null
           latitude: number | null
           longitude: number | null
           phone: string
@@ -61,6 +62,7 @@ export type Database = {
           event_time?: string | null
           full_name: string
           id?: string
+          internal_notes?: string | null
           latitude?: number | null
           longitude?: number | null
           phone: string
@@ -79,6 +81,7 @@ export type Database = {
           event_time?: string | null
           full_name?: string
           id?: string
+          internal_notes?: string | null
           latitude?: number | null
           longitude?: number | null
           phone?: string

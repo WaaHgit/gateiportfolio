@@ -16,7 +16,11 @@ type Tab = "upload" | "portfolio" | "reviews" | "bookings" | "insights" | "links
 function AdminPage() {
   const { admin, user, loading, error, retry } = useIsAdmin();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>("upload");
+  const [tab, setTab] = useState<Tab>(() => {
+    if (typeof window === "undefined") return "upload";
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return (["upload","portfolio","reviews","bookings","insights","links","about"] as Tab[]).includes(t as Tab) ? (t as Tab) : "upload";
+  });
 
   useEffect(() => {
     if (loading) return;
@@ -816,6 +820,9 @@ function ReviewsPanel() {
 }
 
 /* ============== BOOKINGS ============== */
+type BookingStatus = "pending" | "confirmed" | "declined" | "done";
+type BookingFilter = "all" | "pending" | "confirmed" | "upcoming" | "done" | "declined";
+
 type BookingRow = {
   id: string;
   full_name: string;
@@ -830,14 +837,23 @@ type BookingRow = {
   event_date: string | null;
   event_time: string | null;
   venue: string | null;
-  latitude: number | null;
-  longitude: number | null;
+  internal_notes: string | null;
   calendar_event_id: string | null;
 };
 
+function isUpcoming(b: BookingRow) {
+  if (b.status !== "confirmed" || !b.event_date) return false;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return new Date(b.event_date) >= today;
+}
+
 function BookingsPanel() {
   const [rows, setRows] = useState<BookingRow[]>([]);
+  const [filter, setFilter] = useState<BookingFilter>("pending");
+  const [confirming, setConfirming] = useState<BookingRow | null>(null);
+  const [editing, setEditing] = useState<BookingRow | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const focusedId = useRef<string | null>(null);
 
   async function load() {
     const { data } = await supabase.from("bookings").select("*").order("created_at", { ascending: false });
@@ -845,152 +861,311 @@ function BookingsPanel() {
   }
   useEffect(() => {
     load();
-    const id = setInterval(load, 30000);
-    return () => clearInterval(id);
+    const ch = supabase
+      .channel("admin-bookings-watch")
+      .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
   }, []);
 
-  async function setStatus(id: string, status: string) {
-    const { error } = await supabase.from("bookings").update({ status }).eq("id", id);
-    if (error) toast.error(error.message); else toast.success("Updated");
-  }
-  async function del(id: string) {
-    if (!confirm("Delete booking?")) return;
-    const { error } = await supabase.from("bookings").delete().eq("id", id);
-    if (error) toast.error(error.message); else toast.success("Deleted");
-  }
-  async function patch(id: string, patch: Partial<BookingRow>) {
-    const { error } = await supabase.from("bookings").update(patch).eq("id", id);
+  // Deep-link: /admin?id=X scrolls to and highlights that booking
+  useEffect(() => {
+    if (typeof window === "undefined" || rows.length === 0 || focusedId.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("id");
+    if (!id) return;
+    const target = rows.find((r) => r.id === id);
+    if (!target) return;
+    focusedId.current = id;
+    setFilter("all");
+    requestAnimationFrame(() => {
+      document.getElementById(`booking-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [rows]);
+
+  const filtered = useMemo(() => {
+    if (filter === "all") return rows;
+    if (filter === "upcoming") return rows.filter(isUpcoming);
+    return rows.filter((r) => r.status === filter);
+  }, [rows, filter]);
+
+  async function patch(id: string, p: Partial<BookingRow>) {
+    const { error } = await supabase.from("bookings").update(p).eq("id", id);
     if (error) toast.error(error.message);
+    else load();
   }
-  async function confirmAgreement(id: string) {
-    setBusy(id);
+
+  async function decline(id: string) {
+    if (!confirm("Decline this booking? You can move it back to Pending later.")) return;
+    await patch(id, { status: "declined" });
+    toast.success("Booking declined");
+  }
+
+  async function moveBack(id: string, to: BookingStatus) {
+    await patch(id, { status: to });
+    toast.success(`Moved to ${to}`);
+  }
+
+  async function markDone(id: string) {
+    await patch(id, { status: "done" });
+    toast.success("Marked as done");
+  }
+
+  async function reschedule(id: string) {
+    if (!confirm("Move this booking back to Pending? All details are preserved.")) return;
+    await patch(id, { status: "pending", agreement_confirmed: false });
+    toast.success("Sent back to Pending — all details preserved");
+  }
+
+  async function del(id: string) {
+    if (!confirm("Delete booking permanently?")) return;
+    const { error } = await supabase.from("bookings").delete().eq("id", id);
+    if (error) toast.error(error.message); else { toast.success("Deleted"); load(); }
+  }
+
+  return (
+    <div className="space-y-5">
+      <BookingAnalytics rows={rows} active={filter} onPick={setFilter} />
+
+      <div className="flex flex-wrap gap-1 border-b border-border">
+        {(["all", "pending", "confirmed", "upcoming", "done", "declined"] as BookingFilter[]).map((f) => {
+          const count =
+            f === "all" ? rows.length :
+            f === "upcoming" ? rows.filter(isUpcoming).length :
+            rows.filter((r) => r.status === f).length;
+          return (
+            <button key={f} onClick={() => setFilter(f)}
+              className={`uppercase-tracked text-xs px-3 py-2 -mb-px border-b-2 transition-colors ${filter === f ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+              {f} <span className="ml-1 tabular-nums opacity-70">({count})</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {filtered.length === 0 && <p className="text-muted-foreground text-sm py-8 text-center">No bookings in this view.</p>}
+
+      {filtered.map((b) => {
+        const upcoming = isUpcoming(b);
+        return (
+          <article key={b.id} id={`booking-${b.id}`}
+            className={`border bg-card p-5 transition-colors ${focusedId.current === b.id ? "border-primary" : "border-border"}`}>
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-display text-xl truncate">{b.full_name}</h3>
+                  <StatusBadge status={(b.status as BookingStatus) ?? "pending"} upcoming={upcoming} />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">{new Date(b.created_at).toLocaleString()} · {b.service}</p>
+              </div>
+              <button onClick={() => del(b.id)} className="text-muted-foreground hover:text-destructive p-1" aria-label="Delete">
+                <Trash2 size={14} />
+              </button>
+            </div>
+
+            <div className="mt-3 grid sm:grid-cols-3 gap-3 text-sm">
+              <a href={`mailto:${b.email}`} className="hover:text-primary truncate">{b.email}</a>
+              <a href={`tel:${b.phone}`} className="hover:text-primary">{b.phone}</a>
+              <span className="text-muted-foreground">{b.preferred_date ? `Preferred: ${b.preferred_date}` : "No preferred date"}</span>
+            </div>
+
+            <p className="mt-3 text-sm whitespace-pre-wrap">{b.description}</p>
+
+            {(b.event_date || b.venue || b.internal_notes) && (
+              <div className="mt-4 grid sm:grid-cols-3 gap-3 text-xs bg-secondary/40 border border-border p-3">
+                <div><span className="uppercase-tracked text-muted-foreground block">Event</span>{b.event_date ?? "—"} {b.event_time ? `· ${b.event_time}` : ""}</div>
+                <div><span className="uppercase-tracked text-muted-foreground block">Venue</span>{b.venue ?? "—"}</div>
+                <div className="sm:col-span-3"><span className="uppercase-tracked text-muted-foreground block">Notes</span>{b.internal_notes ?? "—"}</div>
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {b.status === "pending" && (
+                <>
+                  <button onClick={() => setConfirming(b)} disabled={busy === b.id}
+                    className="uppercase-tracked text-xs bg-primary text-primary-foreground px-3 py-2 disabled:opacity-50">Confirm</button>
+                  <button onClick={() => decline(b.id)}
+                    className="uppercase-tracked text-xs border border-border px-3 py-2 hover:border-destructive">Decline</button>
+                </>
+              )}
+              {b.status === "confirmed" && (
+                <>
+                  <button onClick={() => markDone(b.id)}
+                    className="uppercase-tracked text-xs bg-primary text-primary-foreground px-3 py-2">Mark done</button>
+                  <button onClick={() => reschedule(b.id)}
+                    className="uppercase-tracked text-xs border border-border px-3 py-2 hover:border-primary">Reschedule</button>
+                  <button onClick={() => setEditing(b)}
+                    className="uppercase-tracked text-xs border border-border px-3 py-2 hover:border-primary">Edit details</button>
+                  {b.calendar_event_id && (
+                    <span className="text-[11px] uppercase-tracked text-primary flex items-center gap-1 self-center ml-1">
+                      <CalendarCheck size={12} /> on calendar
+                    </span>
+                  )}
+                </>
+              )}
+              {b.status === "declined" && (
+                <button onClick={() => moveBack(b.id, "pending")}
+                  className="uppercase-tracked text-xs border border-border px-3 py-2 hover:border-primary">Move back to Pending</button>
+              )}
+              {b.status === "done" && (
+                <button onClick={() => moveBack(b.id, "confirmed")}
+                  className="uppercase-tracked text-xs border border-border px-3 py-2 hover:border-primary">Reopen</button>
+              )}
+            </div>
+          </article>
+        );
+      })}
+
+      {confirming && (
+        <ConfirmBookingModal booking={confirming}
+          onClose={() => setConfirming(null)}
+          onDone={() => { setConfirming(null); load(); }}
+          setBusy={setBusy} />
+      )}
+      {editing && (
+        <ConfirmBookingModal booking={editing} editMode
+          onClose={() => setEditing(null)}
+          onDone={() => { setEditing(null); load(); }}
+          setBusy={setBusy} />
+      )}
+    </div>
+  );
+}
+
+function StatusBadge({ status, upcoming }: { status: BookingStatus; upcoming: boolean }) {
+  const map: Record<string, string> = {
+    pending: "bg-secondary text-foreground",
+    confirmed: "bg-primary/20 text-primary",
+    declined: "bg-destructive/20 text-destructive",
+    done: "bg-muted text-muted-foreground",
+  };
+  return (
+    <span className="flex items-center gap-1">
+      <span className={`uppercase-tracked text-[10px] px-2 py-0.5 ${map[status] ?? "bg-secondary"}`}>{status}</span>
+      {upcoming && <span className="uppercase-tracked text-[10px] px-2 py-0.5 bg-primary text-primary-foreground">upcoming</span>}
+    </span>
+  );
+}
+
+function ConfirmBookingModal({
+  booking, editMode, onClose, onDone, setBusy,
+}: {
+  booking: BookingRow;
+  editMode?: boolean;
+  onClose: () => void;
+  onDone: () => void;
+  setBusy: (id: string | null) => void;
+}) {
+  const [eventDate, setEventDate] = useState(booking.event_date ?? "");
+  const [eventTime, setEventTime] = useState(booking.event_time ?? "10:00");
+  const [venue, setVenue] = useState(booking.venue ?? "");
+  const [fullName, setFullName] = useState(booking.full_name);
+  const [email, setEmail] = useState(booking.email);
+  const [phone, setPhone] = useState(booking.phone);
+  const [internalNotes, setInternalNotes] = useState(booking.internal_notes ?? "");
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!eventDate) { toast.error("Event date is required"); return; }
+    setSaving(true); setBusy(booking.id);
     try {
-      const target = rows.find((r) => r.id === id);
-      if (target?.event_date) {
+      const { error: upErr } = await supabase.from("bookings").update({
+        full_name: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        event_date: eventDate,
+        event_time: eventTime || null,
+        venue: venue.trim() || null,
+        internal_notes: internalNotes.trim() || null,
+      }).eq("id", booking.id);
+      if (upErr) throw upErr;
+
+      if (!editMode) {
         const { data: conflicts } = await supabase
           .from("bookings")
-          .select("id,full_name,event_date")
-          .eq("event_date", target.event_date)
-          .eq("agreement_confirmed", true)
-          .neq("id", id);
+          .select("id,full_name")
+          .eq("event_date", eventDate)
+          .eq("status", "confirmed")
+          .neq("id", booking.id);
         if (conflicts && conflicts.length > 0) {
-          const names = conflicts.map((c) => c.full_name).join(", ");
-          const ok = confirm(
-            `⚠️ Date conflict: ${target.event_date} is already confirmed for ${names}.\n\n` +
-            `Click OK to change this booking's date now, or Cancel to abort.`
-          );
-          if (!ok) { setBusy(null); return; }
-          const newDate = prompt("Enter a new event date (YYYY-MM-DD):", target.event_date);
-          if (!newDate) { setBusy(null); return; }
-          await supabase.from("bookings").update({ event_date: newDate }).eq("id", id);
+          const ok = confirm(`⚠️ ${eventDate} is already confirmed for ${conflicts.map((c) => c.full_name).join(", ")}. Continue anyway?`);
+          if (!ok) { setSaving(false); setBusy(null); return; }
         }
       }
-      const res = await confirmBookingAndAddToCalendar({ data: { booking_id: id } });
+
+      const res = await confirmBookingAndAddToCalendar({ data: { booking_id: booking.id } });
       if (!res.ok) { toast.error(res.reason ?? "Could not confirm"); return; }
-      if (res.calendar_added) toast.success("Confirmed and added to calendar ✅");
-      else toast.success(`Confirmed. ${res.reason ?? ""}`);
-      load();
+      if (res.calendar_added) toast.success(editMode ? "Updated and synced to Google Calendar ✅" : "Confirmed and added to Google Calendar ✅");
+      else toast.success(`Saved. ${res.reason ?? ""}`);
+      onDone();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
-      setBusy(null);
+      setSaving(false); setBusy(null);
     }
   }
 
   return (
-    <div className="space-y-4">
-      <BookingAnalytics rows={rows} />
-      {rows.length === 0 && <p className="text-muted-foreground text-sm">No bookings yet.</p>}
-      {rows.map((b) => (
-        <article key={b.id} className="border border-border bg-card p-5">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <h3 className="font-display text-xl">{b.full_name}</h3>
-              <p className="text-xs text-muted-foreground mt-1">{new Date(b.created_at).toLocaleString()} · {b.service}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <select value={b.status} onChange={(e) => setStatus(b.id, e.target.value)}
-                className="text-xs bg-background border border-border px-2 py-1 uppercase-tracked">
-                <option value="new">New</option>
-                <option value="contacted">Contacted</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="declined">Declined</option>
-                <option value="done">Done</option>
-              </select>
-              <button onClick={() => del(b.id)} className="text-muted-foreground hover:text-destructive p-1"><Trash2 size={14} /></button>
-            </div>
-          </div>
-          <div className="mt-3 grid sm:grid-cols-3 gap-3 text-sm">
-            <a href={`mailto:${b.email}`} className="hover:text-primary truncate">{b.email}</a>
-            <a href={`tel:${b.phone}`} className="hover:text-primary">{b.phone}</a>
-            <span className="text-muted-foreground">{b.preferred_date ? `Preferred: ${b.preferred_date}` : "No preferred date"}</span>
-          </div>
-          <p className="mt-4 text-sm text-muted-foreground whitespace-pre-wrap">{b.description}</p>
+    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in-fade" onClick={onClose}>
+      <div className="bg-card border border-border max-w-2xl w-full max-h-[92vh] overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="font-display text-2xl">{editMode ? "Edit booking" : "Confirm booking"}</h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">✕</button>
+        </div>
+        <p className="text-xs text-muted-foreground mb-5">{editMode ? "Update details and push the change to Google Calendar." : "Set the event details, then we'll add it to projectfilesav@gmail.com calendar automatically."}</p>
 
-          <div className="mt-5 border-t border-border pt-4">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <p className="uppercase-tracked text-primary">Agreement & calendar</p>
-              {b.calendar_event_id && (
-                <span className="text-[11px] uppercase-tracked text-primary flex items-center gap-1">
-                  <CalendarCheck size={12} /> on calendar
-                </span>
-              )}
-            </div>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
-              <label className="block">
-                <span className="uppercase-tracked text-muted-foreground text-[11px]">Event date</span>
-                <input type="date" defaultValue={b.event_date ?? ""}
-                  onBlur={(e) => patch(b.id, { event_date: e.target.value || null })}
-                  className="mt-1 w-full bg-background border border-border px-2 py-1.5 text-sm" />
-              </label>
-              <label className="block">
-                <span className="uppercase-tracked text-muted-foreground text-[11px]">Event time</span>
-                <input type="time" defaultValue={b.event_time ?? ""}
-                  onBlur={(e) => patch(b.id, { event_time: e.target.value || null })}
-                  className="mt-1 w-full bg-background border border-border px-2 py-1.5 text-sm" />
-              </label>
-              <label className="block sm:col-span-2">
-                <span className="uppercase-tracked text-muted-foreground text-[11px]">Venue</span>
-                <input type="text" defaultValue={b.venue ?? ""}
-                  placeholder="Studio / location name"
-                  onBlur={(e) => patch(b.id, { venue: e.target.value || null })}
-                  className="mt-1 w-full bg-background border border-border px-2 py-1.5 text-sm" />
-              </label>
-              <label className="block">
-                <span className="uppercase-tracked text-muted-foreground text-[11px]">Latitude</span>
-                <input type="number" step="any" defaultValue={b.latitude ?? ""}
-                  onBlur={(e) => patch(b.id, { latitude: e.target.value === "" ? null : Number(e.target.value) })}
-                  className="mt-1 w-full bg-background border border-border px-2 py-1.5 text-sm" />
-              </label>
-              <label className="block">
-                <span className="uppercase-tracked text-muted-foreground text-[11px]">Longitude</span>
-                <input type="number" step="any" defaultValue={b.longitude ?? ""}
-                  onBlur={(e) => patch(b.id, { longitude: e.target.value === "" ? null : Number(e.target.value) })}
-                  className="mt-1 w-full bg-background border border-border px-2 py-1.5 text-sm" />
-              </label>
-            </div>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Labeled label="Event date *">
+            <input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)}
+              className="w-full bg-background border border-border focus:border-primary outline-none px-2 py-2" />
+          </Labeled>
+          <Labeled label="Event time">
+            <input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)}
+              className="w-full bg-background border border-border focus:border-primary outline-none px-2 py-2" />
+          </Labeled>
+          <Labeled label="Venue" full>
+            <input type="text" value={venue} onChange={(e) => setVenue(e.target.value)}
+              placeholder="Studio / location"
+              className="w-full bg-background border border-border focus:border-primary outline-none px-2 py-2" />
+          </Labeled>
+          <Labeled label="Client name">
+            <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)}
+              className="w-full bg-background border border-border focus:border-primary outline-none px-2 py-2" />
+          </Labeled>
+          <Labeled label="Client email">
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+              className="w-full bg-background border border-border focus:border-primary outline-none px-2 py-2" />
+          </Labeled>
+          <Labeled label="Client phone" full>
+            <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
+              className="w-full bg-background border border-border focus:border-primary outline-none px-2 py-2" />
+          </Labeled>
+          <Labeled label="Notes (optional, internal only)" full>
+            <textarea value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} rows={3}
+              placeholder="Private notes — also added to the calendar event description"
+              className="w-full bg-background border border-border focus:border-primary outline-none p-2" />
+          </Labeled>
+        </div>
 
-            <label className="mt-4 flex items-start gap-3 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={b.agreement_confirmed}
-                disabled={busy === b.id || b.agreement_confirmed}
-                onChange={() => confirmAgreement(b.id)}
-                className="mt-1 w-4 h-4 accent-[oklch(0.82_0.14_75)]"
-              />
-              <span className="text-sm">
-                <span className="font-medium">Agreement reached — add to calendar</span>
-                <span className="block text-xs text-muted-foreground mt-1">
-                  Tick after you've spoken with the client. Fills in the event on <code>projectfilesav@gmail.com</code> calendar automatically.
-                  {!b.agreement_confirmed && " (Add an event date first.)"}
-                </span>
-                {busy === b.id && <span className="block text-xs text-primary mt-1 flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Working…</span>}
-              </span>
-            </label>
-          </div>
-        </article>
-      ))}
+        <div className="mt-6 flex gap-2">
+          <button onClick={save} disabled={saving}
+            className="uppercase-tracked text-xs bg-primary text-primary-foreground px-4 py-2 disabled:opacity-50 flex items-center gap-2">
+            {saving && <Loader2 size={12} className="animate-spin" />}
+            {editMode ? "Save & sync calendar" : "Confirm & add to calendar"}
+          </button>
+          <button onClick={onClose} disabled={saving}
+            className="uppercase-tracked text-xs border border-border px-4 py-2 hover:border-primary disabled:opacity-50">Cancel</button>
+        </div>
+      </div>
     </div>
+  );
+}
+
+function Labeled({ label, children, full }: { label: string; children: React.ReactNode; full?: boolean }) {
+  return (
+    <label className={`block ${full ? "sm:col-span-2" : ""}`}>
+      <span className="uppercase-tracked text-muted-foreground text-[11px] block mb-1">{label}</span>
+      {children}
+    </label>
   );
 }
 
@@ -1242,25 +1417,34 @@ function AboutPanel() {
 }
 
 /* ============== BOOKING ANALYTICS ============== */
-function BookingAnalytics({ rows }: { rows: BookingRow[] }) {
-  const stats = useMemo(() => {
-    const total = rows.length;
-    const confirmed = rows.filter((r) => r.agreement_confirmed).length;
-    const pending = rows.filter((r) => r.status === "new" || r.status === "contacted").length;
-    const declined = rows.filter((r) => r.status === "declined").length;
-    const done = rows.filter((r) => r.status === "done").length;
-    const upcoming = rows.filter((r) => r.event_date && new Date(r.event_date) >= new Date()).length;
-    return { total, confirmed, pending, declined, done, upcoming };
-  }, [rows]);
+function BookingAnalytics({ rows, active, onPick }: { rows: BookingRow[]; active: BookingFilter; onPick: (f: BookingFilter) => void }) {
+  const stats = useMemo(() => ({
+    total: rows.length,
+    pending: rows.filter((r) => r.status === "pending").length,
+    confirmed: rows.filter((r) => r.status === "confirmed").length,
+    upcoming: rows.filter(isUpcoming).length,
+    done: rows.filter((r) => r.status === "done").length,
+    declined: rows.filter((r) => r.status === "declined").length,
+  }), [rows]);
+
+  const cards: { key: BookingFilter; label: string; value: number }[] = [
+    { key: "all", label: "Total", value: stats.total },
+    { key: "pending", label: "Pending", value: stats.pending },
+    { key: "confirmed", label: "Confirmed", value: stats.confirmed },
+    { key: "upcoming", label: "Upcoming", value: stats.upcoming },
+    { key: "done", label: "Done", value: stats.done },
+    { key: "declined", label: "Declined", value: stats.declined },
+  ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-6">
-      <Stat label="Total" value={stats.total} />
-      <Stat label="Pending" value={stats.pending} />
-      <Stat label="Confirmed" value={stats.confirmed} />
-      <Stat label="Upcoming" value={stats.upcoming} />
-      <Stat label="Done" value={stats.done} />
-      <Stat label="Declined" value={stats.declined} />
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-2">
+      {cards.map((c) => (
+        <button key={c.key} onClick={() => onPick(c.key)}
+          className={`text-left border bg-card p-4 transition-colors ${active === c.key ? "border-primary" : "border-border hover:border-primary/50"}`}>
+          <p className="uppercase-tracked text-[10px] text-muted-foreground">{c.label}</p>
+          <p className="font-display text-3xl mt-2 tabular-nums">{c.value}</p>
+        </button>
+      ))}
     </div>
   );
 }
