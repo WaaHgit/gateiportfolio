@@ -18,7 +18,7 @@ const BookingSchema = z.object({
 export const submitBooking = createServerFn({ method: "POST" })
   .inputValidator((data) => BookingSchema.parse(data))
   .handler(async ({ data }) => {
-    const payload = { ...data, preferred_date: data.preferred_date ?? null };
+    const payload = { ...data, preferred_date: data.preferred_date ?? null, status: "pending" };
     const { error } = await supabaseAdmin.from("bookings").insert(payload);
     if (error) throw new Error(`Could not save booking: ${error.message}`);
     // Best-effort notify; do not fail the user submission if Docs/Gmail fail.

@@ -5,12 +5,17 @@ type Props = {
   src: string;
   poster?: string;
   className?: string;
-  /** Tile-style auto silent loop preview (used in grids). Crops to fill. */
+  /** Tile-style auto silent loop preview (used in grids). */
   autoPreview?: boolean;
-  /** When true (lightbox/full view), preserve original aspect ratio — never crop. */
+  /** When true (lightbox/full view), constrain to viewport via max-h. */
   contain?: boolean;
 };
 
+/**
+ * Always renders the video at its NATURAL aspect ratio (portrait stays portrait,
+ * landscape stays landscape). No cropping, no forced aspect, no distortion.
+ * The wrapper is width-driven; height comes from the video's intrinsic ratio.
+ */
 export function MediaVideo({ src, poster, className, autoPreview = false, contain = false }: Props) {
   const ref = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(autoPreview);
@@ -19,11 +24,9 @@ export function MediaVideo({ src, poster, className, autoPreview = false, contai
   useEffect(() => {
     const v = ref.current;
     if (!v) return;
-    // Autoplay muted loop on both tile and full view; user can unmute anytime.
     v.muted = true;
     v.loop = true;
-    const tryPlay = () => v.play().catch(() => {});
-    tryPlay();
+    v.play().catch(() => {});
   }, [src]);
 
   function togglePlay(e: React.MouseEvent) {
@@ -42,10 +45,8 @@ export function MediaVideo({ src, poster, className, autoPreview = false, contai
     setMuted(v.muted);
   }
 
-  const fit = contain ? "object-contain" : "object-cover";
-
   return (
-    <div className={`relative group ${className ?? ""}`}>
+    <div className={`relative group inline-block w-full ${className ?? ""}`}>
       <video
         ref={ref}
         src={src}
@@ -54,11 +55,12 @@ export function MediaVideo({ src, poster, className, autoPreview = false, contai
         loop
         muted={muted}
         preload="metadata"
-        className={`w-full h-full ${fit} bg-black`}
+        // h-auto = video keeps its real aspect ratio. object-contain is a safety net
+        // in case a parent ever forces a height — it will letterbox, never crop.
+        className={`w-full h-auto block bg-black object-contain ${contain ? "max-h-[78vh] mx-auto" : ""}`}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
       />
-      {/* Center play/pause */}
       <button
         type="button"
         onClick={togglePlay}
@@ -71,7 +73,6 @@ export function MediaVideo({ src, poster, className, autoPreview = false, contai
           {playing ? <Pause size={22} /> : <Play size={22} className="ml-1" />}
         </span>
       </button>
-      {/* Mute toggle — always visible on touch devices, fades in on hover for desktop */}
       <button
         type="button"
         onClick={toggleMute}
