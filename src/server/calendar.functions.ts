@@ -71,7 +71,8 @@ export const confirmBookingAndAddToCalendar = createServerFn({ method: "POST" })
         `Email: ${booking.email}\n` +
         `Phone: ${booking.phone}\n` +
         `Service: ${booking.service}\n\n` +
-        (booking.description ?? "");
+        `Brief from client:\n${booking.description ?? ""}\n\n` +
+        (booking.internal_notes ? `Admin notes:\n${booking.internal_notes}\n` : "");
 
       const body: Record<string, unknown> = {
         summary: `${booking.service} — ${booking.full_name}`,
