@@ -1413,25 +1413,34 @@ function AboutPanel() {
 }
 
 /* ============== BOOKING ANALYTICS ============== */
-function BookingAnalytics({ rows }: { rows: BookingRow[] }) {
-  const stats = useMemo(() => {
-    const total = rows.length;
-    const confirmed = rows.filter((r) => r.agreement_confirmed).length;
-    const pending = rows.filter((r) => r.status === "new" || r.status === "contacted").length;
-    const declined = rows.filter((r) => r.status === "declined").length;
-    const done = rows.filter((r) => r.status === "done").length;
-    const upcoming = rows.filter((r) => r.event_date && new Date(r.event_date) >= new Date()).length;
-    return { total, confirmed, pending, declined, done, upcoming };
-  }, [rows]);
+function BookingAnalytics({ rows, active, onPick }: { rows: BookingRow[]; active: BookingFilter; onPick: (f: BookingFilter) => void }) {
+  const stats = useMemo(() => ({
+    total: rows.length,
+    pending: rows.filter((r) => r.status === "pending").length,
+    confirmed: rows.filter((r) => r.status === "confirmed").length,
+    upcoming: rows.filter(isUpcoming).length,
+    done: rows.filter((r) => r.status === "done").length,
+    declined: rows.filter((r) => r.status === "declined").length,
+  }), [rows]);
+
+  const cards: { key: BookingFilter; label: string; value: number }[] = [
+    { key: "all", label: "Total", value: stats.total },
+    { key: "pending", label: "Pending", value: stats.pending },
+    { key: "confirmed", label: "Confirmed", value: stats.confirmed },
+    { key: "upcoming", label: "Upcoming", value: stats.upcoming },
+    { key: "done", label: "Done", value: stats.done },
+    { key: "declined", label: "Declined", value: stats.declined },
+  ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-6">
-      <Stat label="Total" value={stats.total} />
-      <Stat label="Pending" value={stats.pending} />
-      <Stat label="Confirmed" value={stats.confirmed} />
-      <Stat label="Upcoming" value={stats.upcoming} />
-      <Stat label="Done" value={stats.done} />
-      <Stat label="Declined" value={stats.declined} />
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-2">
+      {cards.map((c) => (
+        <button key={c.key} onClick={() => onPick(c.key)}
+          className={`text-left border bg-card p-4 transition-colors ${active === c.key ? "border-primary" : "border-border hover:border-primary/50"}`}>
+          <p className="uppercase-tracked text-[10px] text-muted-foreground">{c.label}</p>
+          <p className="font-display text-3xl mt-2 tabular-nums">{c.value}</p>
+        </button>
+      ))}
     </div>
   );
 }
