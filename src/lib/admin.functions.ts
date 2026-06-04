@@ -14,6 +14,7 @@ export const getAdminStatus = createServerFn({ method: "GET" })
   .middleware([attachAuthHeader, requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     try {
       const { data, error } = await supabaseAdmin
