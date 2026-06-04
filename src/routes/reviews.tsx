@@ -158,8 +158,8 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
         return;
       }
 
-      await submitToDb(parsed.data, resolvedUser);
-      onSubmitted();
+      const inserted = await submitToDb(parsed.data, resolvedUser);
+      if (inserted) onSubmitted();
     } catch {
       sessionStorage.removeItem(PENDING_KEY);
     } finally {
@@ -201,12 +201,13 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
       } else {
         toast.error(error.message);
       }
-      return;
+      return false;
     }
     toast.success("Thank you for your feedback");
     setName("");
     setMessage("");
     setRating(0);
+    return true;
   }
 
   async function submit(e: React.FormEvent) {
@@ -235,9 +236,9 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
       return;
     }
 
-    await submitToDb(parsed.data, sess.session.user);
+    const inserted = await submitToDb(parsed.data, sess.session.user);
     setBusy(false);
-    onSubmitted();
+    if (inserted) onSubmitted();
   }
 
   return (
