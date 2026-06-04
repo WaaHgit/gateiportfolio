@@ -226,7 +226,6 @@ export type Database = {
           author_id: string | null
           avatar_url: string | null
           created_at: string
-          email: string | null
           id: string
           message: string
           name: string
@@ -237,7 +236,6 @@ export type Database = {
           author_id?: string | null
           avatar_url?: string | null
           created_at?: string
-          email?: string | null
           id?: string
           message: string
           name: string
@@ -248,7 +246,6 @@ export type Database = {
           author_id?: string | null
           avatar_url?: string | null
           created_at?: string
-          email?: string | null
           id?: string
           message?: string
           name?: string
