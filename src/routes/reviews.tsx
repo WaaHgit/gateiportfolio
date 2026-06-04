@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
 import { Star } from "lucide-react";
@@ -134,23 +134,52 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
   const [message, setMessage] = useState("");
   const [rating, setRating] = useState(0);
   const [busy, setBusy] = useState(false);
+  const restoringDraft = useRef(false);
+
+  async function restorePendingReview(user?: { id: string; user_metadata: Record<string, unknown> | undefined }) {
+    const raw = sessionStorage.getItem(PENDING_KEY);
+    if (!raw || restoringDraft.current) return;
+
+    let resolvedUser = user;
+    if (!resolvedUser) {
+      const { data: sess } = await supabase.auth.getSession();
+      resolvedUser = sess.session?.user;
+    }
+    if (!resolvedUser) return;
+
+    restoringDraft.current = true;
+    try {
+      const draft = JSON.parse(raw) as { name: string; message: string; rating: number };
+      const parsed = reviewSchema.safeParse(draft);
+      sessionStorage.removeItem(PENDING_KEY);
+
+      if (!parsed.success) {
+        toast.error("Your saved review draft could not be restored.");
+        return;
+      }
+
+      const inserted = await submitToDb(parsed.data, resolvedUser);
+      if (inserted) onSubmitted();
+    } catch {
+      sessionStorage.removeItem(PENDING_KEY);
+    } finally {
+      restoringDraft.current = false;
+    }
+  }
 
   // If user just returned from Google auth with a pending draft, submit it.
   useEffect(() => {
-    (async () => {
-      const raw = sessionStorage.getItem(PENDING_KEY);
-      if (!raw) return;
-      const { data: sess } = await supabase.auth.getSession();
-      if (!sess.session) return;
-      try {
-        const draft = JSON.parse(raw) as { name: string; message: string; rating: number };
-        sessionStorage.removeItem(PENDING_KEY);
-        await submitToDb(draft, sess.session.user);
-        onSubmitted();
-      } catch {
-        sessionStorage.removeItem(PENDING_KEY);
+    void restorePendingReview();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        void restorePendingReview(session.user);
       }
-    })();
+    });
+
+    return () => subscription.unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -172,12 +201,13 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
       } else {
         toast.error(error.message);
       }
-      return;
+      return false;
     }
     toast.success("Thank you for your feedback");
     setName("");
     setMessage("");
     setRating(0);
+    return true;
   }
 
   async function submit(e: React.FormEvent) {
@@ -206,9 +236,9 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
       return;
     }
 
-    await submitToDb(parsed.data, sess.session.user);
+    const inserted = await submitToDb(parsed.data, sess.session.user);
     setBusy(false);
-    onSubmitted();
+    if (inserted) onSubmitted();
   }
 
   return (
