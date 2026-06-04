@@ -793,14 +793,16 @@ function ReviewsPanel() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2 border-b border-border pb-3">
-        {(["pending", "approved", "rejected", "all"] as const).map((f) => (
+        {(["all", "pending", "approved", "rejected"] as const).map((f) => (
           <button key={f} onClick={() => setFilter(f)}
             className={`uppercase-tracked text-xs px-3 py-2 ${filter === f ? "text-primary border-b-2 border-primary -mb-3" : "text-muted-foreground hover:text-foreground"}`}>
-            {f}
+            {f} <span className="ml-1 opacity-60">({counts[f]})</span>
           </button>
         ))}
       </div>
-      {rows.length === 0 ? (
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading reviews…</p>
+      ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">No reviews here.</p>
       ) : (
         rows.map((r) => (
