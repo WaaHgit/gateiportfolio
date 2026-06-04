@@ -2,7 +2,6 @@ import { createServerFn, createMiddleware } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabase as browserSupabase } from "@/integrations/supabase/client";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const CAL_GATEWAY = "https://connector-gateway.lovable.dev/google_calendar/calendar/v3";
 const TARGET_CALENDAR = "projectfilesav@gmail.com";
