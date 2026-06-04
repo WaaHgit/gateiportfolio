@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
-import { submitBooking } from "@/server/booking-notify.functions";
+import { submitBooking } from "@/lib/booking-notify.functions";
 
 export const Route = createFileRoute("/book")({
   head: () => ({
