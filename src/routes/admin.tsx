@@ -731,15 +731,42 @@ type ReviewRow = {
 
 function ReviewsPanel() {
   const [rows, setRows] = useState<ReviewRow[]>([]);
-  const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
+  const [counts, setCounts] = useState({ all: 0, pending: 0, approved: 0, rejected: 0 });
+  const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
+  const [loading, setLoading] = useState(true);
 
   async function load() {
-    let q = supabase.from("reviews").select("*").order("created_at", { ascending: false });
-    if (filter !== "all") q = q.eq("status", filter);
-    const { data } = await q;
-    setRows((data as ReviewRow[]) ?? []);
+    setLoading(true);
+    const { data: allData, error } = await supabase
+      .from("reviews")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) {
+      toast.error(`Could not load reviews: ${error.message}`);
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+    const all = (allData as ReviewRow[]) ?? [];
+    setCounts({
+      all: all.length,
+      pending: all.filter((r) => r.status === "pending").length,
+      approved: all.filter((r) => r.status === "approved").length,
+      rejected: all.filter((r) => r.status === "rejected").length,
+    });
+    setRows(filter === "all" ? all : all.filter((r) => r.status === filter));
+    setLoading(false);
   }
   useEffect(() => { load(); }, [filter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Realtime: new submissions appear instantly
+  useEffect(() => {
+    const ch = supabase
+      .channel("admin-reviews")
+      .on("postgres_changes", { event: "*", schema: "public", table: "reviews" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function approve(id: string) {
     const { error } = await supabase.from("reviews").update({ status: "approved" }).eq("id", id);
@@ -766,14 +793,16 @@ function ReviewsPanel() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2 border-b border-border pb-3">
-        {(["pending", "approved", "rejected", "all"] as const).map((f) => (
+        {(["all", "pending", "approved", "rejected"] as const).map((f) => (
           <button key={f} onClick={() => setFilter(f)}
             className={`uppercase-tracked text-xs px-3 py-2 ${filter === f ? "text-primary border-b-2 border-primary -mb-3" : "text-muted-foreground hover:text-foreground"}`}>
-            {f}
+            {f} <span className="ml-1 opacity-60">({counts[f]})</span>
           </button>
         ))}
       </div>
-      {rows.length === 0 ? (
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading reviews…</p>
+      ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">No reviews here.</p>
       ) : (
         rows.map((r) => (
