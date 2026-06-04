@@ -15,6 +15,7 @@ const attachAuthHeader = createMiddleware({ type: "function" }).client(async ({ 
 const requireAdmin = createMiddleware({ type: "function" })
   .middleware([requireSupabaseAuth])
   .server(async ({ next, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data, error } = await supabaseAdmin
       .from("user_roles")
       .select("role")
