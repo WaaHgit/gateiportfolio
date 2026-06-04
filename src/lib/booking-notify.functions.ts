@@ -1,7 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { notifyBooking } from "./booking-notify.server";
 
 const BookingSchema = z.object({
   full_name: z.string().trim().min(1).max(200),
@@ -18,6 +16,8 @@ const BookingSchema = z.object({
 export const submitBooking = createServerFn({ method: "POST" })
   .inputValidator((data) => BookingSchema.parse(data))
   .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { notifyBooking } = await import("./booking-notify.server");
     const payload = { ...data, preferred_date: data.preferred_date ?? null, status: "pending" };
     const { data: inserted, error } = await supabaseAdmin
       .from("bookings")

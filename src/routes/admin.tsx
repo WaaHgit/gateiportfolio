@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useIsAdmin } from "@/lib/auth";
 import { toast } from "sonner";
 import { Trash2, UploadCloud, LogOut, Loader2, Star, CalendarCheck, BarChart3, Eye, MousePointerClick, CalendarDays, Activity } from "lucide-react";
-import { confirmBookingAndAddToCalendar } from "@/server/calendar.functions";
+import { confirmBookingAndAddToCalendar } from "@/lib/calendar.functions";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "Admin — GATEI" }] }),

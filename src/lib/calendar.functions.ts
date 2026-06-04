@@ -2,7 +2,6 @@ import { createServerFn, createMiddleware } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabase as browserSupabase } from "@/integrations/supabase/client";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const CAL_GATEWAY = "https://connector-gateway.lovable.dev/google_calendar/calendar/v3";
 const TARGET_CALENDAR = "projectfilesav@gmail.com";
@@ -16,6 +15,7 @@ const attachAuthHeader = createMiddleware({ type: "function" }).client(async ({ 
 const requireAdmin = createMiddleware({ type: "function" })
   .middleware([requireSupabaseAuth])
   .server(async ({ next, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data, error } = await supabaseAdmin
       .from("user_roles")
       .select("role")
@@ -32,6 +32,7 @@ export const confirmBookingAndAddToCalendar = createServerFn({ method: "POST" })
   .middleware([attachAuthHeader, requireAdmin])
   .inputValidator((d) => InputSchema.parse(d))
   .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: booking, error: bErr } = await supabaseAdmin
       .from("bookings")
       .select("*")
