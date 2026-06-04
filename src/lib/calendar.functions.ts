@@ -32,6 +32,7 @@ export const confirmBookingAndAddToCalendar = createServerFn({ method: "POST" })
   .middleware([attachAuthHeader, requireAdmin])
   .inputValidator((d) => InputSchema.parse(d))
   .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: booking, error: bErr } = await supabaseAdmin
       .from("bookings")
       .select("*")
