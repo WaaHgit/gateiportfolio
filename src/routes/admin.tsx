@@ -721,7 +721,6 @@ function PortfolioPanel() {
 type ReviewRow = {
   id: string;
   name: string;
-  email: string | null;
   message: string;
   rating: number;
   avatar_url: string | null;
