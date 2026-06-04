@@ -1,7 +1,6 @@
 import { createServerFn, createMiddleware } from "@tanstack/react-start";
 import { supabase as browserSupabase } from "@/integrations/supabase/client";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const attachAuthHeader = createMiddleware({ type: "function" }).client(async ({ next }) => {
   const { data } = await browserSupabase.auth.getSession();
