@@ -822,7 +822,7 @@ function ReviewsPanel() {
                   </div>
                   <span className={`uppercase-tracked text-[10px] px-2 py-0.5 ${r.status === "approved" ? "bg-primary/20 text-primary" : r.status === "rejected" ? "bg-destructive/20 text-destructive" : "bg-secondary text-muted-foreground"}`}>{r.status}</span>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">{r.email ?? "no email"} · {new Date(r.created_at).toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground mt-1">{new Date(r.created_at).toLocaleString()}</p>
                 <p className="mt-3 text-sm">{r.message}</p>
               </div>
             </div>
