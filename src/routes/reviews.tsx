@@ -163,7 +163,6 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
       name: payload.name,
       message: payload.message,
       rating: payload.rating,
-      email: null,
       avatar_url: null,
       status: "pending",
     });
