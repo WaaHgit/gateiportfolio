@@ -14,11 +14,10 @@ const NAV = [
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
 
-  // Close menu on route change / escape / resize to desktop
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    const onResize = () => window.innerWidth >= 768 && setOpen(false);
+    const onResize = () => window.innerWidth >= 1024 && setOpen(false);
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKey);
     window.addEventListener("resize", onResize);
@@ -31,13 +30,20 @@ export function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-40 backdrop-blur-md bg-background/70 border-b border-border">
-      <div className="container-narrow flex items-center justify-between gap-3 sm:gap-6 h-14 sm:h-16">
-        <Link to="/" className="font-display text-lg sm:text-2xl tracking-widest shrink-0" onClick={() => setOpen(false)}>
+      <div className="container-narrow flex items-center justify-between gap-3 h-14 sm:h-16">
+        <Link
+          to="/"
+          className="font-display text-lg sm:text-2xl tracking-widest shrink-0"
+          onClick={() => setOpen(false)}
+        >
           GATEI
         </Link>
 
-        {/* Desktop nav */}
-        <nav className="hidden md:flex flex-1 items-center justify-center gap-6" aria-label="Primary">
+        {/* Desktop nav — show only on lg+ to avoid overflow on tablets/small laptops */}
+        <nav
+          className="hidden lg:flex flex-1 items-center justify-center gap-6"
+          aria-label="Primary"
+        >
           {NAV.map((n) => (
             <Link
               key={n.to}
@@ -51,10 +57,10 @@ export function SiteHeader() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <Link
             to="/book"
-            className="uppercase-tracked text-[11px] sm:text-xs border border-primary text-primary px-3 py-1.5 sm:px-4 sm:py-2 hover:bg-primary hover:text-primary-foreground transition-colors shrink-0"
+            className="hidden sm:inline-block uppercase-tracked text-[11px] sm:text-xs border border-primary text-primary px-3 py-1.5 sm:px-4 sm:py-2 hover:bg-primary hover:text-primary-foreground transition-colors"
             onClick={() => setOpen(false)}
           >
             Book
@@ -64,7 +70,7 @@ export function SiteHeader() {
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
-            className="md:hidden inline-flex items-center justify-center w-10 h-10 text-foreground hover:text-primary"
+            className="lg:hidden inline-flex items-center justify-center w-10 h-10 text-foreground hover:text-primary"
           >
             {open ? <X size={22} /> : <Menu size={22} />}
           </button>
@@ -73,7 +79,7 @@ export function SiteHeader() {
 
       {/* Mobile drawer */}
       {open && (
-        <div className="md:hidden fixed inset-x-0 top-14 bottom-0 bg-background/95 backdrop-blur-md border-t border-border z-40 animate-in-fade">
+        <div className="lg:hidden fixed inset-x-0 top-14 bottom-0 bg-background/95 backdrop-blur-md border-t border-border z-40 animate-in-fade overflow-y-auto">
           <nav className="container-narrow py-6 flex flex-col gap-1" aria-label="Mobile">
             {NAV.map((n) => (
               <Link
@@ -87,6 +93,13 @@ export function SiteHeader() {
                 {n.label}
               </Link>
             ))}
+            <Link
+              to="/book"
+              onClick={() => setOpen(false)}
+              className="uppercase-tracked text-sm py-3 mt-4 text-center border border-primary text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+            >
+              Book
+            </Link>
           </nav>
         </div>
       )}
