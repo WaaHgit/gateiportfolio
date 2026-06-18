@@ -21,6 +21,15 @@ type Payload = {
 
 export async function track(p: Payload) {
   if (typeof window === "undefined") return;
+  if (p.kind === "page_view" && "requestIdleCallback" in window) {
+    window.requestIdleCallback(() => void sendTrack(p), { timeout: 2500 });
+    return;
+  }
+
+  await sendTrack(p);
+}
+
+async function sendTrack(p: Payload) {
   try {
     await supabase.from("page_events").insert({
       kind: p.kind,
