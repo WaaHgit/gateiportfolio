@@ -220,7 +220,7 @@ export type Database = {
       }
       reviews: {
         Row: {
-          author_id: string | null
+          author_id: string
           avatar_url: string | null
           created_at: string
           id: string
@@ -230,7 +230,7 @@ export type Database = {
           status: string
         }
         Insert: {
-          author_id?: string | null
+          author_id: string
           avatar_url?: string | null
           created_at?: string
           id?: string
@@ -240,7 +240,7 @@ export type Database = {
           status?: string
         }
         Update: {
-          author_id?: string | null
+          author_id?: string
           avatar_url?: string | null
           created_at?: string
           id?: string
