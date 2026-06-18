@@ -6,7 +6,21 @@ import {
 } from "lucide-react";
 import { track } from "@/lib/track";
 
-type Link = { platform: string; label: string; url: string; is_visible: boolean };
+export type SocialLink = { platform: string; label: string; url: string; is_visible: boolean };
+
+let visibleLinksPromise: Promise<SocialLink[]> | null = null;
+
+export function getVisibleSocialLinks() {
+  visibleLinksPromise ??= supabase
+    .from("social_links")
+    .select("platform,label,url,is_visible")
+    .eq("is_visible", true)
+    .order("sort_order")
+    .then(({ data }) => (data as SocialLink[]) ?? [])
+    .catch(() => []);
+
+  return visibleLinksPromise;
+}
 
 const SAFE_PROTOCOLS = /^(https?:\/\/|mailto:|tel:|#)/i;
 function safeHref(url: string | null | undefined): string {
@@ -40,14 +54,9 @@ const ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
 };
 
 export function SocialIcons({ size = 20 }: { size?: number }) {
-  const [links, setLinks] = useState<Link[]>([]);
+  const [links, setLinks] = useState<SocialLink[]>([]);
   useEffect(() => {
-    supabase
-      .from("social_links")
-      .select("platform,label,url,is_visible")
-      .eq("is_visible", true)
-      .order("sort_order")
-      .then(({ data }) => setLinks((data as Link[]) ?? []));
+    getVisibleSocialLinks().then(setLinks);
   }, []);
   return (
     <ul className="flex flex-wrap gap-3">
