@@ -154,12 +154,16 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
       sessionStorage.removeItem(PENDING_KEY);
 
       if (!parsed.success) {
+        sessionStorage.removeItem(PENDING_KEY);
         toast.error("Your saved review draft could not be restored.");
         return;
       }
 
       const inserted = await submitToDb(parsed.data, resolvedUser);
-      if (inserted) onSubmitted();
+      if (inserted) {
+        sessionStorage.removeItem(PENDING_KEY);
+        onSubmitted();
+      }
     } catch {
       sessionStorage.removeItem(PENDING_KEY);
     } finally {
@@ -232,7 +236,17 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
         setBusy(false);
         return;
       }
-      // Browser redirects; nothing more to do.
+
+      const { data: freshSession } = await supabase.auth.getSession();
+      if (freshSession.session?.user) {
+        const inserted = await submitToDb(parsed.data, freshSession.session.user);
+        setBusy(false);
+        if (inserted) {
+          sessionStorage.removeItem(PENDING_KEY);
+          onSubmitted();
+        }
+      }
+      // If the browser redirected, the auth-state restore will submit the saved draft on return.
       return;
     }
 
