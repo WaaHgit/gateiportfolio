@@ -10,14 +10,18 @@ export type SocialLink = { platform: string; label: string; url: string; is_visi
 
 let visibleLinksPromise: Promise<SocialLink[]> | null = null;
 
-export function getVisibleSocialLinks() {
-  visibleLinksPromise ??= supabase
-    .from("social_links")
-    .select("platform,label,url,is_visible")
-    .eq("is_visible", true)
-    .order("sort_order")
-    .then(({ data }) => (data as SocialLink[]) ?? [])
-    .catch(() => []);
+export function getVisibleSocialLinks(): Promise<SocialLink[]> {
+  if (!visibleLinksPromise) {
+    visibleLinksPromise = Promise.resolve(
+      supabase
+        .from("social_links")
+        .select("platform,label,url,is_visible")
+        .eq("is_visible", true)
+        .order("sort_order")
+    )
+      .then(({ data }) => (data as SocialLink[]) ?? [])
+      .catch(() => []);
+  }
 
   return visibleLinksPromise;
 }
