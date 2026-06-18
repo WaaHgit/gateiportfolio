@@ -18,7 +18,7 @@ type Props = {
  */
 export function MediaVideo({ src, poster, className, autoPreview = false, contain = false }: Props) {
   const ref = useRef<HTMLVideoElement>(null);
-  const [playing, setPlaying] = useState(autoPreview);
+  const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(true);
 
   useEffect(() => {
@@ -26,8 +26,22 @@ export function MediaVideo({ src, poster, className, autoPreview = false, contai
     if (!v) return;
     v.muted = true;
     v.loop = true;
-    v.play().catch(() => {});
-  }, [src]);
+    if (!autoPreview) {
+      v.pause();
+      setPlaying(false);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) v.play().catch(() => {});
+        else v.pause();
+      },
+      { rootMargin: "160px", threshold: 0.15 }
+    );
+    observer.observe(v);
+    return () => observer.disconnect();
+  }, [src, autoPreview]);
 
   function togglePlay(e: React.MouseEvent) {
     e.stopPropagation();
@@ -54,7 +68,7 @@ export function MediaVideo({ src, poster, className, autoPreview = false, contai
         playsInline
         loop
         muted={muted}
-        preload="metadata"
+        preload={autoPreview ? "metadata" : "none"}
         // h-auto = video keeps its real aspect ratio. object-contain is a safety net
         // in case a parent ever forces a height — it will letterbox, never crop.
         className={`w-full h-auto block bg-black object-contain ${contain ? "max-h-[78vh] mx-auto" : ""}`}
