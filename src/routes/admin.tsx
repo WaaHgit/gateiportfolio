@@ -731,7 +731,7 @@ type ReviewRow = {
 function ReviewsPanel() {
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [counts, setCounts] = useState({ all: 0, pending: 0, approved: 0, rejected: 0 });
-  const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
+  const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
   const [loading, setLoading] = useState(true);
 
   async function load() {
@@ -753,10 +753,10 @@ function ReviewsPanel() {
       approved: all.filter((r) => r.status === "approved").length,
       rejected: all.filter((r) => r.status === "rejected").length,
     });
-    setRows(filter === "all" ? all : all.filter((r) => r.status === filter));
+    setRows(all);
     setLoading(false);
   }
-  useEffect(() => { load(); }, [filter]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, []);
 
   // Realtime: new submissions appear instantly
   useEffect(() => {
@@ -766,6 +766,8 @@ function ReviewsPanel() {
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filteredRows = filter === "all" ? rows : rows.filter((r) => r.status === filter);
 
   async function approve(id: string) {
     const { error } = await supabase.from("reviews").update({ status: "approved" }).eq("id", id);
@@ -801,10 +803,10 @@ function ReviewsPanel() {
       </div>
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading reviews…</p>
-      ) : rows.length === 0 ? (
+      ) : filteredRows.length === 0 ? (
         <p className="text-sm text-muted-foreground">No reviews here.</p>
       ) : (
-        rows.map((r) => (
+        filteredRows.map((r) => (
           <article key={r.id} className="border border-border bg-card p-5">
             <div className="flex items-start gap-3 flex-wrap">
               {r.avatar_url ? (

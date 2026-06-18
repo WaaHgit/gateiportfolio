@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { SocialIcons } from "@/components/SocialIcons";
+import { MediaVideo } from "@/components/MediaVideo";
 import { ArrowRight, Camera, Headphones, Film, Palette } from "lucide-react";
 
 export const Route = createFileRoute("/")({
@@ -118,6 +119,7 @@ function FeaturedPortfolio() {
     supabase
       .from("portfolio_items")
       .select("id,file_url,type,title")
+      .eq("status", "published")
       .order("created_at", { ascending: false })
       .limit(6)
       .then(({ data }) => setItems((data as never) ?? []));
@@ -141,10 +143,10 @@ function FeaturedPortfolio() {
             {items.map((it) => (
               <div key={it.id} className="aspect-square bg-card overflow-hidden border border-border">
                 {it.type === "image" && (
-                  <img src={it.file_url} alt={it.title ?? ""} loading="lazy" className="w-full h-full object-cover hover:scale-105 transition-transform duration-700" />
+                  <img src={it.file_url} alt={it.title ?? ""} loading="lazy" decoding="async" className="w-full h-full object-cover hover:scale-105 transition-transform duration-700" />
                 )}
                 {it.type === "video" && (
-                  <video src={it.file_url} muted playsInline loop autoPlay className="w-full h-full object-cover" />
+                  <MediaVideo src={it.file_url} className="h-full [&_video]:h-full [&_video]:object-cover" />
                 )}
                 {it.type === "audio" && (
                   <div className="w-full h-full flex items-center justify-center bg-secondary">
