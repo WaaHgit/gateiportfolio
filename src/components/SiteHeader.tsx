@@ -13,6 +13,7 @@ const NAV = [
 
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
+  const drawerId = "mobile-primary-navigation";
 
   useEffect(() => {
     if (!open) return;
@@ -69,8 +70,9 @@ export function SiteHeader() {
             type="button"
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
+            aria-controls={drawerId}
             onClick={() => setOpen((v) => !v)}
-            className="lg:hidden inline-flex items-center justify-center w-10 h-10 text-foreground hover:text-primary"
+            className="lg:hidden inline-flex items-center justify-center w-11 h-11 shrink-0 text-foreground hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-primary"
           >
             {open ? <X size={22} /> : <Menu size={22} />}
           </button>
@@ -79,15 +81,18 @@ export function SiteHeader() {
 
       {/* Mobile drawer */}
       {open && (
-        <div className="lg:hidden fixed inset-x-0 top-14 bottom-0 bg-background/95 backdrop-blur-md border-t border-border z-40 animate-in-fade overflow-y-auto">
-          <nav className="container-narrow py-6 flex flex-col gap-1" aria-label="Mobile">
+        <div
+          id={drawerId}
+          className="lg:hidden fixed inset-x-0 top-14 sm:top-16 bottom-0 z-[90] h-[calc(100dvh-3.5rem)] sm:h-[calc(100dvh-4rem)] bg-background/98 backdrop-blur-md border-t border-border animate-in-fade overflow-y-auto overscroll-contain"
+        >
+          <nav className="container-narrow py-5 flex flex-col gap-1" aria-label="Mobile">
             {NAV.map((n) => (
               <Link
                 key={n.to}
                 to={n.to}
                 onClick={() => setOpen(false)}
-                className="uppercase-tracked text-sm py-3 border-b border-border/60 text-muted-foreground hover:text-foreground"
-                activeProps={{ className: "uppercase-tracked text-sm py-3 border-b border-border/60 text-primary" }}
+                className="uppercase-tracked text-sm py-4 min-h-12 border-b border-border/60 text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-primary"
+                activeProps={{ className: "uppercase-tracked text-sm py-4 min-h-12 border-b border-border/60 text-primary" }}
                 activeOptions={{ exact: n.to === "/" }}
               >
                 {n.label}
@@ -96,7 +101,7 @@ export function SiteHeader() {
             <Link
               to="/book"
               onClick={() => setOpen(false)}
-              className="uppercase-tracked text-sm py-3 mt-4 text-center border border-primary text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+              className="uppercase-tracked text-sm py-4 min-h-12 mt-4 text-center border border-primary text-primary hover:bg-primary hover:text-primary-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-primary transition-colors"
             >
               Book
             </Link>
