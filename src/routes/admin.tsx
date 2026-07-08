@@ -1,10 +1,19 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useIsAdmin } from "@/lib/auth";
 import { toast } from "sonner";
-import { Trash2, UploadCloud, LogOut, Loader2, Star, CalendarCheck, BarChart3, Eye, MousePointerClick, CalendarDays, Activity } from "lucide-react";
+import { Trash2, UploadCloud, LogOut, Loader2, Star, CalendarCheck, BarChart3, Eye, MousePointerClick, CalendarDays, Activity, X, Pencil } from "lucide-react";
 import { confirmBookingAndAddToCalendar } from "@/lib/calendar.functions";
+import {
+  editReview,
+  fetchAllReviewsForAdmin,
+  softDeleteReview,
+  updateReviewStatus,
+  type Review,
+  type ReviewPatch,
+  type ReviewStatus,
+} from "@/lib/reviews";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "Admin — GATEI" }] }),
