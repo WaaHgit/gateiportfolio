@@ -220,34 +220,58 @@ export type Database = {
       }
       reviews: {
         Row: {
-          author_id: string
-          avatar_url: string | null
+          approved_at: string | null
+          archived_at: string | null
+          author_id: string | null
+          client_name: string
+          company: string | null
           created_at: string
+          deleted_at: string | null
           id: string
-          message: string
-          name: string
+          position: string | null
+          profile_image_url: string | null
           rating: number
+          rejected_at: string | null
+          review_text: string
           status: string
+          submission_date: string
+          updated_at: string
         }
         Insert: {
-          author_id: string
-          avatar_url?: string | null
+          approved_at?: string | null
+          archived_at?: string | null
+          author_id?: string | null
+          client_name: string
+          company?: string | null
           created_at?: string
+          deleted_at?: string | null
           id?: string
-          message: string
-          name: string
+          position?: string | null
+          profile_image_url?: string | null
           rating: number
+          rejected_at?: string | null
+          review_text: string
           status?: string
+          submission_date?: string
+          updated_at?: string
         }
         Update: {
-          author_id?: string
-          avatar_url?: string | null
+          approved_at?: string | null
+          archived_at?: string | null
+          author_id?: string | null
+          client_name?: string
+          company?: string | null
           created_at?: string
+          deleted_at?: string | null
           id?: string
-          message?: string
-          name?: string
+          position?: string | null
+          profile_image_url?: string | null
           rating?: number
+          rejected_at?: string | null
+          review_text?: string
           status?: string
+          submission_date?: string
+          updated_at?: string
         }
         Relationships: []
       }
