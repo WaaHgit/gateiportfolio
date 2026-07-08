@@ -1,10 +1,19 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useIsAdmin } from "@/lib/auth";
 import { toast } from "sonner";
-import { Trash2, UploadCloud, LogOut, Loader2, Star, CalendarCheck, BarChart3, Eye, MousePointerClick, CalendarDays, Activity } from "lucide-react";
+import { Trash2, UploadCloud, LogOut, Loader2, Star, CalendarCheck, BarChart3, Eye, MousePointerClick, CalendarDays, Activity, X, Pencil } from "lucide-react";
 import { confirmBookingAndAddToCalendar } from "@/lib/calendar.functions";
+import {
+  editReview,
+  fetchAllReviewsForAdmin,
+  softDeleteReview,
+  updateReviewStatus,
+  type Review,
+  type ReviewPatch,
+  type ReviewStatus,
+} from "@/lib/reviews";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "Admin — GATEI" }] }),
@@ -718,136 +727,493 @@ function PortfolioPanel() {
 }
 
 /* ============== REVIEWS MODERATION ============== */
-type ReviewRow = {
-  id: string;
-  name: string;
-  message: string;
-  rating: number;
-  avatar_url: string | null;
-  status: "pending" | "approved" | "rejected";
-  created_at: string;
-};
+
+const STATUS_TABS: ReviewStatus[] = ["pending", "approved", "rejected", "archived"];
+
+function statusBadgeClass(s: ReviewStatus) {
+  switch (s) {
+    case "approved": return "bg-primary/20 text-primary";
+    case "rejected": return "bg-destructive/20 text-destructive";
+    case "archived": return "bg-muted text-muted-foreground";
+    default: return "bg-secondary text-foreground";
+  }
+}
+
+function transitionsFor(s: ReviewStatus): ReviewStatus[] {
+  switch (s) {
+    case "pending": return ["approved", "rejected", "archived"];
+    case "approved": return ["pending", "rejected", "archived"];
+    case "rejected": return ["pending", "approved", "archived"];
+    case "archived": return ["pending", "approved"];
+  }
+}
+
+function transitionLabel(target: ReviewStatus, current: ReviewStatus): string {
+  if (target === "approved") return "Approve";
+  if (target === "rejected") return "Reject";
+  if (target === "archived") return "Archive";
+  // target === "pending"
+  return current === "approved" ? "Move to pending" : "Restore to pending";
+}
+
+function transitionNeedsConfirm(target: ReviewStatus) {
+  return target === "rejected" || target === "archived";
+}
 
 function ReviewsPanel() {
-  const [rows, setRows] = useState<ReviewRow[]>([]);
-  const [counts, setCounts] = useState({ all: 0, pending: 0, approved: 0, rejected: 0 });
-  const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
+  const [rows, setRows] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<ReviewStatus>(() => {
+    if (typeof window === "undefined") return "pending";
+    const t = new URLSearchParams(window.location.search).get("reviewTab");
+    return (STATUS_TABS as string[]).includes(t ?? "") ? (t as ReviewStatus) : "pending";
+  });
+  const [search, setSearch] = useState("");
+  const [sortNewest, setSortNewest] = useState(true);
+  const [confirm, setConfirm] = useState<{ review: Review; target: ReviewStatus | "delete" } | null>(null);
+  const [editing, setEditing] = useState<Review | null>(null);
+  const busyRef = useRef<Set<string>>(new Set());
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
-    const { data: allData, error } = await supabase
-      .from("reviews")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) {
-      toast.error(`Could not load reviews: ${error.message}`);
-      setRows([]);
+    try {
+      const list = await fetchAllReviewsForAdmin();
+      setRows(list);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not load reviews");
+    } finally {
       setLoading(false);
-      return;
     }
-    const all = (allData as ReviewRow[]) ?? [];
-    setCounts({
-      all: all.length,
-      pending: all.filter((r) => r.status === "pending").length,
-      approved: all.filter((r) => r.status === "approved").length,
-      rejected: all.filter((r) => r.status === "rejected").length,
-    });
-    setRows(all);
-    setLoading(false);
-  }
-  useEffect(() => { load(); }, []);
+  }, []);
 
-  // Realtime: new submissions appear instantly
+  useEffect(() => { void load(); }, [load]);
+
+  // Persist active reviews tab in URL
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("reviewTab", tab);
+    window.history.replaceState({}, "", url.toString());
+  }, [tab]);
+
+  // Realtime keeps the moderation queue live across admin sessions
   useEffect(() => {
     const ch = supabase
-      .channel("admin-reviews")
-      .on("postgres_changes", { event: "*", schema: "public", table: "reviews" }, () => load())
+      .channel("admin-reviews-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "reviews" }, () => void load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [load]);
 
-  const filteredRows = filter === "all" ? rows : rows.filter((r) => r.status === filter);
+  const counts = useMemo(() => {
+    const c: Record<ReviewStatus, number> = { pending: 0, approved: 0, rejected: 0, archived: 0 };
+    for (const r of rows) c[r.status] += 1;
+    return c;
+  }, [rows]);
 
-  async function approve(id: string) {
-    const { error } = await supabase.from("reviews").update({ status: "approved" }).eq("id", id);
-    if (error) toast.error(error.message);
-    else { toast.success("Approved — now visible on website"); load(); }
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const base = rows.filter((r) => r.status === tab);
+    const searched = q
+      ? base.filter((r) =>
+          r.client_name.toLowerCase().includes(q) ||
+          r.review_text.toLowerCase().includes(q) ||
+          (r.company ?? "").toLowerCase().includes(q))
+      : base;
+    return [...searched].sort((a, b) => {
+      const av = new Date(a.submission_date).getTime();
+      const bv = new Date(b.submission_date).getTime();
+      return sortNewest ? bv - av : av - bv;
+    });
+  }, [rows, tab, search, sortNewest]);
+
+  async function applyStatus(review: Review, target: ReviewStatus) {
+    if (busyRef.current.has(review.id)) return;
+    if (review.status === target) { toast.success("No change"); return; }
+    busyRef.current.add(review.id);
+    // Optimistic update
+    setRows((prev) => prev.map((r) => (r.id === review.id ? { ...r, status: target } : r)));
+    try {
+      const updated = await updateReviewStatus(review.id, target);
+      if (updated) {
+        setRows((prev) => prev.map((r) => (r.id === review.id ? updated : r)));
+        toast.success(
+          target === "approved" ? "Review approved and published." :
+          target === "rejected" ? "Review rejected." :
+          target === "archived" ? "Review archived." :
+          "Review moved back to pending."
+        );
+      } else {
+        toast.message("This review was updated elsewhere — refreshing.");
+        await load();
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Update failed");
+      await load();
+    } finally {
+      busyRef.current.delete(review.id);
+    }
   }
-  async function reject(id: string) {
-    const { error } = await supabase.from("reviews").update({ status: "rejected" }).eq("id", id);
-    if (error) toast.error(error.message);
-    else { toast.success("Rejected"); load(); }
+
+  async function doDelete(review: Review) {
+    if (busyRef.current.has(review.id)) return;
+    busyRef.current.add(review.id);
+    setRows((prev) => prev.filter((r) => r.id !== review.id));
+    try {
+      await softDeleteReview(review.id);
+      toast.success("Review deleted.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
+      await load();
+    } finally {
+      busyRef.current.delete(review.id);
+    }
   }
-  async function toDraft(id: string) {
-    const { error } = await supabase.from("reviews").update({ status: "pending" }).eq("id", id);
-    if (error) toast.error(error.message);
-    else { toast.success("Moved back to drafts"); load(); }
-  }
-  async function del(id: string) {
-    if (!confirm("Delete this review permanently?")) return;
-    const { error } = await supabase.from("reviews").delete().eq("id", id);
-    if (error) toast.error(error.message);
-    else { toast.success("Deleted"); load(); }
+
+  async function saveEdit(id: string, patch: ReviewPatch) {
+    const updated = await editReview(id, patch);
+    if (updated) {
+      setRows((prev) => prev.map((r) => (r.id === id ? updated : r)));
+      toast.success("Review saved.");
+    } else {
+      toast.message("This review was updated elsewhere — refreshing.");
+      await load();
+    }
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-2 border-b border-border pb-3">
-        {(["all", "pending", "approved", "rejected"] as const).map((f) => (
-          <button key={f} onClick={() => setFilter(f)}
-            className={`uppercase-tracked text-xs px-3 py-2 ${filter === f ? "text-primary border-b-2 border-primary -mb-3" : "text-muted-foreground hover:text-foreground"}`}>
-            {f} <span className="ml-1 opacity-60">({counts[f]})</span>
+    <div className="space-y-6">
+      <nav className="flex flex-wrap gap-2 border-b border-border pb-3" role="tablist">
+        {STATUS_TABS.map((s) => (
+          <button
+            key={s}
+            role="tab"
+            aria-selected={tab === s}
+            onClick={() => setTab(s)}
+            className={`uppercase-tracked text-xs px-3 py-2 ${tab === s ? "text-primary border-b-2 border-primary -mb-3" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            {s} <span className="ml-1 opacity-60">({counts[s]})</span>
           </button>
         ))}
+      </nav>
+
+      <div className="flex flex-wrap gap-3 items-center">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name, text, or company"
+          className="flex-1 min-w-[220px] bg-background border border-border focus:border-primary outline-none py-2 px-3 text-sm"
+        />
+        <button
+          type="button"
+          onClick={() => setSortNewest((v) => !v)}
+          className="uppercase-tracked text-xs border border-border px-3 py-2 hover:border-primary"
+        >
+          {sortNewest ? "Newest first" : "Oldest first"}
+        </button>
       </div>
+
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading reviews…</p>
-      ) : filteredRows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No reviews here.</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No {tab} reviews{search ? " match your search" : ""}.</p>
       ) : (
-        filteredRows.map((r) => (
-          <article key={r.id} className="border border-border bg-card p-5">
-            <div className="flex items-start gap-3 flex-wrap">
-              {r.avatar_url ? (
-                <img src={r.avatar_url} alt={r.name} className="w-10 h-10 rounded-full object-cover" />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-primary uppercase-tracked">{r.name.charAt(0)}</div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-display">{r.name}</p>
-                  <div className="flex">
-                    {[1,2,3,4,5].map((n) => (
-                      <Star key={n} size={12} className={n <= r.rating ? "fill-primary text-primary" : "text-muted-foreground"} />
-                    ))}
-                  </div>
-                  <span className={`uppercase-tracked text-[10px] px-2 py-0.5 ${r.status === "approved" ? "bg-primary/20 text-primary" : r.status === "rejected" ? "bg-destructive/20 text-destructive" : "bg-secondary text-muted-foreground"}`}>{r.status}</span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">{new Date(r.created_at).toLocaleString()}</p>
-                <p className="mt-3 text-sm">{r.message}</p>
-              </div>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {r.status !== "approved" && (
-                <button onClick={() => approve(r.id)} className="uppercase-tracked text-xs bg-primary text-primary-foreground px-3 py-1.5">Save (publish)</button>
-              )}
-              {r.status === "approved" && (
-                <button onClick={() => toDraft(r.id)} className="uppercase-tracked text-xs border border-border px-3 py-1.5 hover:border-primary">Move to drafts</button>
-              )}
-              {r.status !== "rejected" && (
-                <button onClick={() => reject(r.id)} className="uppercase-tracked text-xs border border-border px-3 py-1.5 hover:border-destructive">Reject</button>
-              )}
-              <button onClick={() => del(r.id)} className="uppercase-tracked text-xs text-muted-foreground hover:text-destructive ml-auto">
-                <Trash2 size={14} />
-              </button>
-            </div>
-          </article>
-        ))
+        <div className="space-y-4">
+          {filtered.map((r) => (
+            <ReviewCard
+              key={r.id}
+              review={r}
+              onEdit={() => setEditing(r)}
+              onTransition={(target) => {
+                if (transitionNeedsConfirm(target)) setConfirm({ review: r, target });
+                else void applyStatus(r, target);
+              }}
+              onDelete={() => setConfirm({ review: r, target: "delete" })}
+            />
+          ))}
+        </div>
+      )}
+
+      {confirm && (
+        <ConfirmDialog
+          title={
+            confirm.target === "delete" ? "Delete this review?" :
+            confirm.target === "rejected" ? "Reject this review?" :
+            confirm.target === "archived" ? "Archive this review?" :
+            "Change review status?"
+          }
+          description={
+            confirm.target === "delete"
+              ? "It will be removed from all moderation lists and cannot be recovered from this dashboard."
+              : confirm.target === "rejected"
+              ? "It will not appear publicly. You can restore it later from the Rejected tab."
+              : "It will not appear publicly. You can restore it later from the Archived tab."
+          }
+          confirmLabel={
+            confirm.target === "delete" ? "Delete" :
+            confirm.target === "rejected" ? "Reject" :
+            "Archive"
+          }
+          destructive={confirm.target === "delete" || confirm.target === "rejected"}
+          onCancel={() => setConfirm(null)}
+          onConfirm={async () => {
+            const { review, target } = confirm;
+            setConfirm(null);
+            if (target === "delete") await doDelete(review);
+            else await applyStatus(review, target);
+          }}
+        />
+      )}
+
+      {editing && (
+        <EditReviewModal
+          review={editing}
+          onClose={() => setEditing(null)}
+          onSave={async (patch) => {
+            await saveEdit(editing.id, patch);
+            setEditing(null);
+          }}
+        />
       )}
     </div>
   );
 }
+
+function ReviewCard({
+  review,
+  onEdit,
+  onTransition,
+  onDelete,
+}: {
+  review: Review;
+  onEdit: () => void;
+  onTransition: (t: ReviewStatus) => void;
+  onDelete: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const long = review.review_text.length > 240;
+  const shown = expanded || !long ? review.review_text : review.review_text.slice(0, 240) + "…";
+  const submitted = new Date(review.submission_date);
+
+  return (
+    <article className="border border-border bg-card p-5">
+      <div className="flex items-start gap-3 flex-wrap">
+        {review.profile_image_url ? (
+          <img src={review.profile_image_url} alt="" className="w-10 h-10 rounded-full object-cover" />
+        ) : (
+          <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-primary uppercase-tracked">
+            {review.client_name.charAt(0)}
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-display">{review.client_name}</p>
+            <div className="flex">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <Star key={n} size={12} className={n <= review.rating ? "fill-primary text-primary" : "text-muted-foreground"} />
+              ))}
+            </div>
+            <span className={`uppercase-tracked text-[10px] px-2 py-0.5 ${statusBadgeClass(review.status)}`}>{review.status}</span>
+          </div>
+          {(review.position || review.company) && (
+            <p className="text-xs text-muted-foreground mt-1">
+              {[review.position, review.company].filter(Boolean).join(" · ")}
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground mt-1" title={submitted.toISOString()}>
+            {submitted.toLocaleString()}
+          </p>
+          <p className="mt-3 text-sm whitespace-pre-line">{shown}</p>
+          {long && (
+            <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-1 text-xs text-primary hover:underline">
+              {expanded ? "Show less" : "Show more"}
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {transitionsFor(review.status).map((target) => (
+          <button
+            key={target}
+            type="button"
+            onClick={() => onTransition(target)}
+            className={`uppercase-tracked text-xs px-3 py-1.5 ${target === "approved" ? "bg-primary text-primary-foreground" : "border border-border hover:border-primary"}`}
+          >
+            {transitionLabel(target, review.status)}
+          </button>
+        ))}
+        <button type="button" onClick={onEdit} className="uppercase-tracked text-xs border border-border px-3 py-1.5 hover:border-primary flex items-center gap-1">
+          <Pencil size={12} /> Edit
+        </button>
+        <button type="button" onClick={onDelete} aria-label="Delete review" className="uppercase-tracked text-xs text-muted-foreground hover:text-destructive ml-auto">
+          <Trash2 size={14} />
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function ConfirmDialog({
+  title,
+  description,
+  confirmLabel,
+  destructive,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  destructive?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void | Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onCancel(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+  return (
+    <div className="fixed inset-0 z-[100] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <div className="max-w-md w-full bg-card border border-border p-6">
+        <h3 className="font-display text-xl">{title}</h3>
+        <p className="text-sm text-muted-foreground mt-3">{description}</p>
+        <div className="mt-6 flex justify-end gap-2">
+          <button onClick={onCancel} className="uppercase-tracked text-xs border border-border px-4 py-2 hover:border-primary">Cancel</button>
+          <button
+            disabled={busy}
+            onClick={async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); } }}
+            className={`uppercase-tracked text-xs px-4 py-2 ${destructive ? "bg-destructive text-destructive-foreground" : "bg-primary text-primary-foreground"} disabled:opacity-50`}
+          >
+            {busy ? "Working…" : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditReviewModal({
+  review,
+  onClose,
+  onSave,
+}: {
+  review: Review;
+  onClose: () => void;
+  onSave: (patch: ReviewPatch) => Promise<void>;
+}) {
+  const [form, setForm] = useState({
+    client_name: review.client_name,
+    review_text: review.review_text,
+    rating: review.rating,
+    company: review.company ?? "",
+    position: review.position ?? "",
+    profile_image_url: review.profile_image_url ?? "",
+    submission_date: review.submission_date.slice(0, 16), // for datetime-local
+  });
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const client_name = form.client_name.trim();
+    const review_text = form.review_text.trim();
+    if (client_name.length < 1) { toast.error("Name is required"); return; }
+    if (review_text.length < 10) { toast.error("Review must be at least 10 characters"); return; }
+    if (form.rating < 1 || form.rating > 5) { toast.error("Rating must be 1–5"); return; }
+    setBusy(true);
+    try {
+      await onSave({
+        client_name,
+        review_text,
+        rating: form.rating,
+        company: form.company.trim() || null,
+        position: form.position.trim() || null,
+        profile_image_url: form.profile_image_url.trim() || null,
+        submission_date: new Date(form.submission_date).toISOString(),
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-background/80 backdrop-blur-sm flex items-start md:items-center justify-center p-4 overflow-y-auto" role="dialog" aria-modal="true">
+      <form onSubmit={submit} className="max-w-xl w-full bg-card border border-border p-6 my-8">
+        <div className="flex items-center justify-between">
+          <h3 className="font-display text-xl">Edit review</h3>
+          <button type="button" onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X size={18} /></button>
+        </div>
+        <div className="mt-5 grid gap-4">
+          <label className="block">
+            <span className="uppercase-tracked text-xs text-muted-foreground">Full name *</span>
+            <input required maxLength={120} value={form.client_name}
+              onChange={(e) => setForm({ ...form, client_name: e.target.value })}
+              className="mt-2 w-full bg-transparent border-b border-border focus:border-primary outline-none py-2" />
+          </label>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <label className="block">
+              <span className="uppercase-tracked text-xs text-muted-foreground">Company</span>
+              <input maxLength={120} value={form.company}
+                onChange={(e) => setForm({ ...form, company: e.target.value })}
+                className="mt-2 w-full bg-transparent border-b border-border focus:border-primary outline-none py-2" />
+            </label>
+            <label className="block">
+              <span className="uppercase-tracked text-xs text-muted-foreground">Role</span>
+              <input maxLength={120} value={form.position}
+                onChange={(e) => setForm({ ...form, position: e.target.value })}
+                className="mt-2 w-full bg-transparent border-b border-border focus:border-primary outline-none py-2" />
+            </label>
+          </div>
+          <label className="block">
+            <span className="uppercase-tracked text-xs text-muted-foreground">Profile image URL</span>
+            <input maxLength={500} value={form.profile_image_url}
+              onChange={(e) => setForm({ ...form, profile_image_url: e.target.value })}
+              className="mt-2 w-full bg-transparent border-b border-border focus:border-primary outline-none py-2" />
+          </label>
+          <div className="flex items-center justify-between">
+            <span className="uppercase-tracked text-xs text-muted-foreground">Rating</span>
+            <div className="flex gap-0.5">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button key={n} type="button" onClick={() => setForm({ ...form, rating: n })} aria-label={`${n} stars`}>
+                  <Star size={22} className={n <= form.rating ? "fill-primary text-primary" : "text-muted-foreground"} />
+                </button>
+              ))}
+            </div>
+          </div>
+          <label className="block">
+            <span className="uppercase-tracked text-xs text-muted-foreground">Review text *</span>
+            <textarea required minLength={10} maxLength={2000} rows={5}
+              value={form.review_text}
+              onChange={(e) => setForm({ ...form, review_text: e.target.value })}
+              className="mt-2 w-full bg-background border border-border focus:border-primary outline-none p-3" />
+          </label>
+          <label className="block">
+            <span className="uppercase-tracked text-xs text-muted-foreground">Submission date</span>
+            <input type="datetime-local" value={form.submission_date}
+              onChange={(e) => setForm({ ...form, submission_date: e.target.value })}
+              className="mt-2 w-full bg-background border border-border focus:border-primary outline-none py-2 px-3" />
+          </label>
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="uppercase-tracked text-xs border border-border px-4 py-2 hover:border-primary">Cancel</button>
+          <button type="submit" disabled={busy} className="uppercase-tracked text-xs bg-primary text-primary-foreground px-4 py-2 disabled:opacity-50">
+            {busy ? "Saving…" : "Save changes"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 
 /* ============== BOOKINGS ============== */
 type BookingStatus = "pending" | "confirmed" | "declined" | "done";
