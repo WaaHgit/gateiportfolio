@@ -222,55 +222,52 @@ export type Database = {
         Row: {
           approved_at: string | null
           archived_at: string | null
-          author_id: string | null
           client_name: string
-          company: string | null
           created_at: string
-          deleted_at: string | null
+          edit_count: number
+          edit_token: string | null
+          edit_token_expires_at: string | null
+          email: string
           id: string
-          position: string | null
-          profile_image_url: string | null
+          is_edited: boolean
           rating: number
-          rejected_at: string | null
           review_text: string
-          status: string
-          submission_date: string
+          status: Database["public"]["Enums"]["review_status"]
+          status_history: Json
           updated_at: string
         }
         Insert: {
           approved_at?: string | null
           archived_at?: string | null
-          author_id?: string | null
           client_name: string
-          company?: string | null
           created_at?: string
-          deleted_at?: string | null
+          edit_count?: number
+          edit_token?: string | null
+          edit_token_expires_at?: string | null
+          email: string
           id?: string
-          position?: string | null
-          profile_image_url?: string | null
+          is_edited?: boolean
           rating: number
-          rejected_at?: string | null
           review_text: string
-          status?: string
-          submission_date?: string
+          status?: Database["public"]["Enums"]["review_status"]
+          status_history?: Json
           updated_at?: string
         }
         Update: {
           approved_at?: string | null
           archived_at?: string | null
-          author_id?: string | null
           client_name?: string
-          company?: string | null
           created_at?: string
-          deleted_at?: string | null
+          edit_count?: number
+          edit_token?: string | null
+          edit_token_expires_at?: string | null
+          email?: string
           id?: string
-          position?: string | null
-          profile_image_url?: string | null
+          is_edited?: boolean
           rating?: number
-          rejected_at?: string | null
           review_text?: string
-          status?: string
-          submission_date?: string
+          status?: Database["public"]["Enums"]["review_status"]
+          status_history?: Json
           updated_at?: string
         }
         Relationships: []
@@ -337,6 +334,7 @@ export type Database = {
       app_role: "admin" | "user"
       media_category: "audio" | "video" | "graphics" | "photography"
       media_type: "image" | "video" | "audio"
+      review_status: "pending" | "live" | "archived"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -467,6 +465,7 @@ export const Constants = {
       app_role: ["admin", "user"],
       media_category: ["audio", "video", "graphics", "photography"],
       media_type: ["image", "video", "audio"],
+      review_status: ["pending", "live", "archived"],
     },
   },
 } as const
