@@ -8,7 +8,7 @@ import { confirmBookingAndAddToCalendar } from "@/lib/calendar.functions";
 import {
   editReview,
   fetchAllReviewsForAdmin,
-  softDeleteReview,
+  deleteReview,
   updateReviewStatus,
   type Review,
   type ReviewPatch,
@@ -728,12 +728,11 @@ function PortfolioPanel() {
 
 /* ============== REVIEWS MODERATION ============== */
 
-const STATUS_TABS: ReviewStatus[] = ["pending", "approved", "rejected", "archived"];
+const STATUS_TABS: ReviewStatus[] = ["pending", "live", "archived"];
 
 function statusBadgeClass(s: ReviewStatus) {
   switch (s) {
-    case "approved": return "bg-primary/20 text-primary";
-    case "rejected": return "bg-destructive/20 text-destructive";
+    case "live": return "bg-primary/20 text-primary";
     case "archived": return "bg-muted text-muted-foreground";
     default: return "bg-secondary text-foreground";
   }
@@ -741,23 +740,16 @@ function statusBadgeClass(s: ReviewStatus) {
 
 function transitionsFor(s: ReviewStatus): ReviewStatus[] {
   switch (s) {
-    case "pending": return ["approved", "rejected", "archived"];
-    case "approved": return ["pending", "rejected", "archived"];
-    case "rejected": return ["pending", "approved", "archived"];
-    case "archived": return ["pending", "approved"];
+    case "pending": return ["live", "archived"];
+    case "live": return ["archived", "pending"];
+    case "archived": return ["live", "pending"];
   }
 }
 
-function transitionLabel(target: ReviewStatus, current: ReviewStatus): string {
-  if (target === "approved") return "Approve";
-  if (target === "rejected") return "Reject";
+function transitionLabel(target: ReviewStatus): string {
+  if (target === "live") return "Approve";
   if (target === "archived") return "Archive";
-  // target === "pending"
-  return current === "approved" ? "Move to pending" : "Restore to pending";
-}
-
-function transitionNeedsConfirm(target: ReviewStatus) {
-  return target === "rejected" || target === "archived";
+  return "Move to pending";
 }
 
 function ReviewsPanel() {
@@ -777,8 +769,7 @@ function ReviewsPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const list = await fetchAllReviewsForAdmin();
-      setRows(list);
+      setRows(await fetchAllReviewsForAdmin());
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not load reviews");
     } finally {
@@ -788,7 +779,6 @@ function ReviewsPanel() {
 
   useEffect(() => { void load(); }, [load]);
 
-  // Persist active reviews tab in URL
   useEffect(() => {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
@@ -796,7 +786,6 @@ function ReviewsPanel() {
     window.history.replaceState({}, "", url.toString());
   }, [tab]);
 
-  // Realtime keeps the moderation queue live across admin sessions
   useEffect(() => {
     const ch = supabase
       .channel("admin-reviews-live")
@@ -806,7 +795,7 @@ function ReviewsPanel() {
   }, [load]);
 
   const counts = useMemo(() => {
-    const c: Record<ReviewStatus, number> = { pending: 0, approved: 0, rejected: 0, archived: 0 };
+    const c: Record<ReviewStatus, number> = { pending: 0, live: 0, archived: 0 };
     for (const r of rows) c[r.status] += 1;
     return c;
   }, [rows]);
@@ -818,11 +807,11 @@ function ReviewsPanel() {
       ? base.filter((r) =>
           r.client_name.toLowerCase().includes(q) ||
           r.review_text.toLowerCase().includes(q) ||
-          (r.company ?? "").toLowerCase().includes(q))
+          r.email.toLowerCase().includes(q))
       : base;
     return [...searched].sort((a, b) => {
-      const av = new Date(a.submission_date).getTime();
-      const bv = new Date(b.submission_date).getTime();
+      const av = new Date(a.created_at).getTime();
+      const bv = new Date(b.created_at).getTime();
       return sortNewest ? bv - av : av - bv;
     });
   }, [rows, tab, search, sortNewest]);
@@ -831,15 +820,13 @@ function ReviewsPanel() {
     if (busyRef.current.has(review.id)) return;
     if (review.status === target) { toast.success("No change"); return; }
     busyRef.current.add(review.id);
-    // Optimistic update
     setRows((prev) => prev.map((r) => (r.id === review.id ? { ...r, status: target } : r)));
     try {
       const updated = await updateReviewStatus(review.id, target);
       if (updated) {
         setRows((prev) => prev.map((r) => (r.id === review.id ? updated : r)));
         toast.success(
-          target === "approved" ? "Review approved and published." :
-          target === "rejected" ? "Review rejected." :
+          target === "live" ? "Review is now live." :
           target === "archived" ? "Review archived." :
           "Review moved back to pending."
         );
@@ -860,7 +847,7 @@ function ReviewsPanel() {
     busyRef.current.add(review.id);
     setRows((prev) => prev.filter((r) => r.id !== review.id));
     try {
-      await softDeleteReview(review.id);
+      await deleteReview(review.id);
       toast.success("Review deleted.");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Delete failed");
@@ -901,7 +888,7 @@ function ReviewsPanel() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name, text, or company"
+          placeholder="Search name, email, or text"
           className="flex-1 min-w-[220px] bg-background border border-border focus:border-primary outline-none py-2 px-3 text-sm"
         />
         <button
@@ -925,7 +912,7 @@ function ReviewsPanel() {
               review={r}
               onEdit={() => setEditing(r)}
               onTransition={(target) => {
-                if (transitionNeedsConfirm(target)) setConfirm({ review: r, target });
+                if (target === "archived") setConfirm({ review: r, target });
                 else void applyStatus(r, target);
               }}
               onDelete={() => setConfirm({ review: r, target: "delete" })}
@@ -936,25 +923,14 @@ function ReviewsPanel() {
 
       {confirm && (
         <ConfirmDialog
-          title={
-            confirm.target === "delete" ? "Delete this review?" :
-            confirm.target === "rejected" ? "Reject this review?" :
-            confirm.target === "archived" ? "Archive this review?" :
-            "Change review status?"
-          }
+          title={confirm.target === "delete" ? "Delete this review?" : "Archive this review?"}
           description={
             confirm.target === "delete"
-              ? "It will be removed from all moderation lists and cannot be recovered from this dashboard."
-              : confirm.target === "rejected"
-              ? "It will not appear publicly. You can restore it later from the Rejected tab."
+              ? "It will be permanently removed and cannot be recovered."
               : "It will not appear publicly. You can restore it later from the Archived tab."
           }
-          confirmLabel={
-            confirm.target === "delete" ? "Delete" :
-            confirm.target === "rejected" ? "Reject" :
-            "Archive"
-          }
-          destructive={confirm.target === "delete" || confirm.target === "rejected"}
+          confirmLabel={confirm.target === "delete" ? "Delete" : "Archive"}
+          destructive={confirm.target === "delete"}
           onCancel={() => setConfirm(null)}
           onConfirm={async () => {
             const { review, target } = confirm;
@@ -993,60 +969,54 @@ function ReviewCard({
   const [expanded, setExpanded] = useState(false);
   const long = review.review_text.length > 240;
   const shown = expanded || !long ? review.review_text : review.review_text.slice(0, 240) + "…";
-  const submitted = new Date(review.submission_date);
+  const submitted = new Date(review.created_at).toLocaleString();
 
   return (
     <article className="border border-border bg-card p-5">
-      <div className="flex items-start gap-3 flex-wrap">
-        {review.profile_image_url ? (
-          <img src={review.profile_image_url} alt="" className="w-10 h-10 rounded-full object-cover" />
-        ) : (
-          <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-primary uppercase-tracked">
-            {review.client_name.charAt(0)}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-3 flex-wrap">
+            <p className="font-display text-lg">{review.client_name}</p>
+            <span className={`uppercase-tracked text-[10px] px-2 py-1 ${statusBadgeClass(review.status)}`}>
+              {review.status}
+            </span>
+            {review.is_edited && (
+              <span className="uppercase-tracked text-[10px] px-2 py-1 bg-secondary text-muted-foreground">edited</span>
+            )}
           </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="font-display">{review.client_name}</p>
-            <div className="flex">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <Star key={n} size={12} className={n <= review.rating ? "fill-primary text-primary" : "text-muted-foreground"} />
-              ))}
-            </div>
-            <span className={`uppercase-tracked text-[10px] px-2 py-0.5 ${statusBadgeClass(review.status)}`}>{review.status}</span>
-          </div>
-          {(review.position || review.company) && (
-            <p className="text-xs text-muted-foreground mt-1">
-              {[review.position, review.company].filter(Boolean).join(" · ")}
-            </p>
-          )}
-          <p className="text-xs text-muted-foreground mt-1" title={submitted.toISOString()}>
-            {submitted.toLocaleString()}
-          </p>
-          <p className="mt-3 text-sm whitespace-pre-line">{shown}</p>
-          {long && (
-            <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-1 text-xs text-primary hover:underline">
-              {expanded ? "Show less" : "Show more"}
-            </button>
-          )}
+          <p className="text-xs text-muted-foreground mt-1">{review.email}</p>
+          <p className="text-xs text-muted-foreground">{submitted}</p>
+        </div>
+        <div className="flex gap-0.5">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <Star key={n} size={14} className={n <= review.rating ? "fill-primary text-primary" : "text-muted-foreground"} />
+          ))}
         </div>
       </div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        {transitionsFor(review.status).map((target) => (
+
+      <p className="mt-4 text-sm leading-relaxed whitespace-pre-line">{shown}</p>
+      {long && (
+        <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-2 text-xs text-primary uppercase-tracked">
+          {expanded ? "Show less" : "Read more"}
+        </button>
+      )}
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        {transitionsFor(review.status).map((t) => (
           <button
-            key={target}
+            key={t}
             type="button"
-            onClick={() => onTransition(target)}
-            className={`uppercase-tracked text-xs px-3 py-1.5 ${target === "approved" ? "bg-primary text-primary-foreground" : "border border-border hover:border-primary"}`}
+            onClick={() => onTransition(t)}
+            className={`uppercase-tracked text-xs px-3 py-2 border ${t === "live" ? "border-primary text-primary hover:bg-primary hover:text-primary-foreground" : "border-border hover:border-primary"}`}
           >
-            {transitionLabel(target, review.status)}
+            {transitionLabel(t)}
           </button>
         ))}
-        <button type="button" onClick={onEdit} className="uppercase-tracked text-xs border border-border px-3 py-1.5 hover:border-primary flex items-center gap-1">
+        <button type="button" onClick={onEdit} className="uppercase-tracked text-xs px-3 py-2 border border-border hover:border-primary inline-flex items-center gap-2">
           <Pencil size={12} /> Edit
         </button>
-        <button type="button" onClick={onDelete} aria-label="Delete review" className="uppercase-tracked text-xs text-muted-foreground hover:text-destructive ml-auto">
-          <Trash2 size={14} />
+        <button type="button" onClick={onDelete} className="uppercase-tracked text-xs px-3 py-2 border border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground inline-flex items-center gap-2">
+          <Trash2 size={12} /> Delete
         </button>
       </div>
     </article>
@@ -1069,22 +1039,20 @@ function ConfirmDialog({
   onConfirm: () => void | Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onCancel(); }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
   return (
-    <div className="fixed inset-0 z-[100] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <div className="max-w-md w-full bg-card border border-border p-6">
+    <div className="fixed inset-0 z-50 bg-background/90 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-md border border-border bg-card p-6">
         <h3 className="font-display text-xl">{title}</h3>
-        <p className="text-sm text-muted-foreground mt-3">{description}</p>
-        <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onCancel} className="uppercase-tracked text-xs border border-border px-4 py-2 hover:border-primary">Cancel</button>
+        <p className="mt-3 text-sm text-muted-foreground">{description}</p>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onCancel} className="uppercase-tracked text-xs border border-border px-4 py-2 hover:border-primary">
+            Cancel
+          </button>
           <button
+            type="button"
             disabled={busy}
-            onClick={async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); } }}
-            className={`uppercase-tracked text-xs px-4 py-2 ${destructive ? "bg-destructive text-destructive-foreground" : "bg-primary text-primary-foreground"} disabled:opacity-50`}
+            onClick={async () => { setBusy(true); await onConfirm(); setBusy(false); }}
+            className={`uppercase-tracked text-xs px-4 py-2 disabled:opacity-50 ${destructive ? "bg-destructive text-destructive-foreground" : "bg-primary text-primary-foreground"}`}
           >
             {busy ? "Working…" : confirmLabel}
           </button>
@@ -1107,106 +1075,78 @@ function EditReviewModal({
     client_name: review.client_name,
     review_text: review.review_text,
     rating: review.rating,
-    company: review.company ?? "",
-    position: review.position ?? "",
-    profile_image_url: review.profile_image_url ?? "",
-    submission_date: review.submission_date.slice(0, 16), // for datetime-local
   });
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const client_name = form.client_name.trim();
-    const review_text = form.review_text.trim();
-    if (client_name.length < 1) { toast.error("Name is required"); return; }
-    if (review_text.length < 10) { toast.error("Review must be at least 10 characters"); return; }
-    if (form.rating < 1 || form.rating > 5) { toast.error("Rating must be 1–5"); return; }
+    if (busy) return;
+    if (!form.client_name.trim() || form.review_text.trim().length < 10 || form.rating < 1) {
+      toast.error("Name, a rating, and at least 10 characters are required.");
+      return;
+    }
     setBusy(true);
     try {
       await onSave({
-        client_name,
-        review_text,
+        client_name: form.client_name.trim(),
+        review_text: form.review_text.trim(),
         rating: form.rating,
-        company: form.company.trim() || null,
-        position: form.position.trim() || null,
-        profile_image_url: form.profile_image_url.trim() || null,
-        submission_date: new Date(form.submission_date).toISOString(),
       });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Save failed");
+    } catch (e2) {
+      toast.error(e2 instanceof Error ? e2.message : "Save failed");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-[100] bg-background/80 backdrop-blur-sm flex items-start md:items-center justify-center p-4 overflow-y-auto" role="dialog" aria-modal="true">
-      <form onSubmit={submit} className="max-w-xl w-full bg-card border border-border p-6 my-8">
+    <div className="fixed inset-0 z-50 bg-background/90 flex items-start justify-center p-4 overflow-y-auto" role="dialog" aria-modal="true">
+      <form onSubmit={submit} className="w-full max-w-lg border border-border bg-card p-6 my-10">
         <div className="flex items-center justify-between">
           <h3 className="font-display text-xl">Edit review</h3>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X size={18} /></button>
+          <button type="button" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
+
         <div className="mt-5 grid gap-4">
           <label className="block">
-            <span className="uppercase-tracked text-xs text-muted-foreground">Full name *</span>
-            <input required maxLength={120} value={form.client_name}
-              onChange={(e) => setForm({ ...form, client_name: e.target.value })}
-              className="mt-2 w-full bg-transparent border-b border-border focus:border-primary outline-none py-2" />
+            <span className="uppercase-tracked text-xs text-muted-foreground">Client name</span>
+            <input
+              value={form.client_name}
+              maxLength={120}
+              onChange={(e) => setForm((f) => ({ ...f, client_name: e.target.value }))}
+              className="mt-2 w-full bg-background border border-border focus:border-primary outline-none py-2 px-3 text-sm"
+            />
           </label>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <label className="block">
-              <span className="uppercase-tracked text-xs text-muted-foreground">Company</span>
-              <input maxLength={120} value={form.company}
-                onChange={(e) => setForm({ ...form, company: e.target.value })}
-                className="mt-2 w-full bg-transparent border-b border-border focus:border-primary outline-none py-2" />
-            </label>
-            <label className="block">
-              <span className="uppercase-tracked text-xs text-muted-foreground">Role</span>
-              <input maxLength={120} value={form.position}
-                onChange={(e) => setForm({ ...form, position: e.target.value })}
-                className="mt-2 w-full bg-transparent border-b border-border focus:border-primary outline-none py-2" />
-            </label>
-          </div>
-          <label className="block">
-            <span className="uppercase-tracked text-xs text-muted-foreground">Profile image URL</span>
-            <input maxLength={500} value={form.profile_image_url}
-              onChange={(e) => setForm({ ...form, profile_image_url: e.target.value })}
-              className="mt-2 w-full bg-transparent border-b border-border focus:border-primary outline-none py-2" />
-          </label>
+
           <div className="flex items-center justify-between">
             <span className="uppercase-tracked text-xs text-muted-foreground">Rating</span>
             <div className="flex gap-0.5">
               {[1, 2, 3, 4, 5].map((n) => (
-                <button key={n} type="button" onClick={() => setForm({ ...form, rating: n })} aria-label={`${n} stars`}>
-                  <Star size={22} className={n <= form.rating ? "fill-primary text-primary" : "text-muted-foreground"} />
+                <button key={n} type="button" onClick={() => setForm((f) => ({ ...f, rating: n }))} aria-label={`${n} stars`}>
+                  <Star size={20} className={n <= form.rating ? "fill-primary text-primary" : "text-muted-foreground"} />
                 </button>
               ))}
             </div>
           </div>
+
           <label className="block">
-            <span className="uppercase-tracked text-xs text-muted-foreground">Review text *</span>
-            <textarea required minLength={10} maxLength={2000} rows={5}
+            <span className="uppercase-tracked text-xs text-muted-foreground">Review</span>
+            <textarea
+              rows={6}
+              maxLength={1000}
               value={form.review_text}
-              onChange={(e) => setForm({ ...form, review_text: e.target.value })}
-              className="mt-2 w-full bg-background border border-border focus:border-primary outline-none p-3" />
-          </label>
-          <label className="block">
-            <span className="uppercase-tracked text-xs text-muted-foreground">Submission date</span>
-            <input type="datetime-local" value={form.submission_date}
-              onChange={(e) => setForm({ ...form, submission_date: e.target.value })}
-              className="mt-2 w-full bg-background border border-border focus:border-primary outline-none py-2 px-3" />
+              onChange={(e) => setForm((f) => ({ ...f, review_text: e.target.value }))}
+              className="mt-2 w-full bg-background border border-border focus:border-primary outline-none p-3 text-sm"
+            />
           </label>
         </div>
-        <div className="mt-6 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="uppercase-tracked text-xs border border-border px-4 py-2 hover:border-primary">Cancel</button>
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="uppercase-tracked text-xs border border-border px-4 py-2 hover:border-primary">
+            Cancel
+          </button>
           <button type="submit" disabled={busy} className="uppercase-tracked text-xs bg-primary text-primary-foreground px-4 py-2 disabled:opacity-50">
-            {busy ? "Saving…" : "Save changes"}
+            {busy ? "Saving…" : "Save"}
           </button>
         </div>
       </form>
