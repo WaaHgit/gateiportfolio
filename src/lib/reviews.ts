@@ -1,115 +1,85 @@
-// Shared Reviews types and helpers — used by public site and admin dashboard.
+// Shared Reviews types and client-side helpers.
+// Public submission + token-based editing go through server functions
+// (src/lib/reviews.functions.ts); this module holds types and admin reads/writes.
 import { supabase } from "@/integrations/supabase/client";
 
-export type ReviewStatus = "pending" | "approved" | "rejected" | "archived";
+export type ReviewStatus = "pending" | "live" | "archived";
 
 export type Review = {
   id: string;
+  email: string;
   client_name: string;
-  review_text: string;
   rating: number;
-  company: string | null;
-  position: string | null;
-  profile_image_url: string | null;
+  review_text: string;
   status: ReviewStatus;
-  submission_date: string;
+  edit_count: number;
+  is_edited: boolean;
   created_at: string;
   updated_at: string;
   approved_at: string | null;
-  rejected_at: string | null;
   archived_at: string | null;
-  deleted_at: string | null;
 };
 
-export type ReviewInsert = {
-  client_name: string;
-  review_text: string;
-  rating: number;
-  company?: string | null;
-  position?: string | null;
-  profile_image_url?: string | null;
-};
-
-export type ReviewPatch = Partial<
-  Pick<
-    Review,
-    | "client_name"
-    | "review_text"
-    | "rating"
-    | "company"
-    | "position"
-    | "profile_image_url"
-    | "submission_date"
-  >
+export type PublicReview = Pick<
+  Review,
+  "id" | "client_name" | "rating" | "review_text" | "is_edited" | "approved_at" | "created_at"
 >;
 
-export const REVIEW_STATUSES: ReviewStatus[] = ["pending", "approved", "rejected", "archived"];
+export const REVIEW_STATUSES: ReviewStatus[] = ["pending", "live", "archived"];
 
-const REVIEW_COLUMNS =
-  "id,client_name,review_text,rating,company,position,profile_image_url,status,submission_date,created_at,updated_at,approved_at,rejected_at,archived_at,deleted_at";
+const ADMIN_COLUMNS =
+  "id,email,client_name,rating,review_text,status,edit_count,is_edited,created_at,updated_at,approved_at,archived_at";
 
-export async function fetchApprovedReviews(): Promise<Review[]> {
+const PUBLIC_COLUMNS = "id,client_name,rating,review_text,is_edited,approved_at,created_at";
+
+export function statusLabel(s: ReviewStatus) {
+  return s === "live" ? "Live" : s === "pending" ? "Pending" : "Archived";
+}
+
+export async function fetchLiveReviews(): Promise<PublicReview[]> {
   const { data, error } = await supabase
     .from("reviews")
-    .select(REVIEW_COLUMNS)
-    .eq("status", "approved")
-    .is("deleted_at", null)
+    .select(PUBLIC_COLUMNS)
+    .eq("status", "live")
     .order("approved_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as unknown as Review[];
+  return (data ?? []) as unknown as PublicReview[];
 }
 
 export async function fetchAllReviewsForAdmin(): Promise<Review[]> {
   const { data, error } = await supabase
     .from("reviews")
-    .select(REVIEW_COLUMNS)
-    .is("deleted_at", null)
-    .order("submission_date", { ascending: false });
+    .select(ADMIN_COLUMNS)
+    .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as unknown as Review[];
 }
 
-export async function insertReview(payload: ReviewInsert) {
-  // status is forced to 'pending' server-side by a trigger — never trust client input.
-  const { error } = await supabase.from("reviews").insert({
-    client_name: payload.client_name,
-    review_text: payload.review_text,
-    rating: payload.rating,
-    company: payload.company ?? null,
-    position: payload.position ?? null,
-    profile_image_url: payload.profile_image_url ?? null,
-  });
-  if (error) throw error;
-}
-
-export async function updateReviewStatus(id: string, status: ReviewStatus) {
-  // Timestamp for the new status is set by a DB trigger — we only send status.
+export async function updateReviewStatus(id: string, status: ReviewStatus): Promise<Review | null> {
   const { data, error } = await supabase
     .from("reviews")
     .update({ status })
     .eq("id", id)
-    .is("deleted_at", null)
-    .select(REVIEW_COLUMNS)
+    .select(ADMIN_COLUMNS)
     .maybeSingle();
   if (error) throw error;
   return (data as unknown as Review) ?? null;
 }
 
-export async function editReview(id: string, patch: ReviewPatch) {
+export type ReviewPatch = Partial<Pick<Review, "client_name" | "review_text" | "rating">>;
+
+export async function editReview(id: string, patch: ReviewPatch): Promise<Review | null> {
   const { data, error } = await supabase
     .from("reviews")
     .update(patch)
     .eq("id", id)
-    .select(REVIEW_COLUMNS)
+    .select(ADMIN_COLUMNS)
     .maybeSingle();
   if (error) throw error;
   return (data as unknown as Review) ?? null;
 }
 
-export async function softDeleteReview(id: string) {
-  const { error } = await supabase
-    .from("reviews")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
+export async function deleteReview(id: string) {
+  const { error } = await supabase.from("reviews").delete().eq("id", id);
   if (error) throw error;
 }
