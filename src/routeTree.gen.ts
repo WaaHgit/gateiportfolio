@@ -18,6 +18,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ReviewsEditRouteImport } from './routes/reviews_.edit'
 
 const ServicesRoute = ServicesRouteImport.update({
   id: '/services',
@@ -64,6 +65,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReviewsEditRoute = ReviewsEditRouteImport.update({
+  id: '/reviews_/edit',
+  path: '/reviews/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/portfolio': typeof PortfolioRoute
   '/reviews': typeof ReviewsRoute
   '/services': typeof ServicesRoute
+  '/reviews/edit': typeof ReviewsEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -86,6 +93,7 @@ export interface FileRoutesByTo {
   '/portfolio': typeof PortfolioRoute
   '/reviews': typeof ReviewsRoute
   '/services': typeof ServicesRoute
+  '/reviews/edit': typeof ReviewsEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -98,6 +106,7 @@ export interface FileRoutesById {
   '/portfolio': typeof PortfolioRoute
   '/reviews': typeof ReviewsRoute
   '/services': typeof ServicesRoute
+  '/reviews_/edit': typeof ReviewsEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -111,6 +120,7 @@ export interface FileRouteTypes {
     | '/portfolio'
     | '/reviews'
     | '/services'
+    | '/reviews/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -122,6 +132,7 @@ export interface FileRouteTypes {
     | '/portfolio'
     | '/reviews'
     | '/services'
+    | '/reviews/edit'
   id:
     | '__root__'
     | '/'
@@ -133,6 +144,7 @@ export interface FileRouteTypes {
     | '/portfolio'
     | '/reviews'
     | '/services'
+    | '/reviews_/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -145,6 +157,7 @@ export interface RootRouteChildren {
   PortfolioRoute: typeof PortfolioRoute
   ReviewsRoute: typeof ReviewsRoute
   ServicesRoute: typeof ServicesRoute
+  ReviewsEditRoute: typeof ReviewsEditRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -212,6 +225,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reviews_/edit': {
+      id: '/reviews_/edit'
+      path: '/reviews/edit'
+      fullPath: '/reviews/edit'
+      preLoaderRoute: typeof ReviewsEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -225,6 +245,7 @@ const rootRouteChildren: RootRouteChildren = {
   PortfolioRoute: PortfolioRoute,
   ReviewsRoute: ReviewsRoute,
   ServicesRoute: ServicesRoute,
+  ReviewsEditRoute: ReviewsEditRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
