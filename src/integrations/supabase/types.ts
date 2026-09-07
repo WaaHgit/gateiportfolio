@@ -325,36 +325,7 @@ export type Database = {
       }
     }
     Views: {
-      reviews_public: {
-        Row: {
-          approved_at: string | null
-          client_name: string | null
-          created_at: string | null
-          id: string | null
-          is_edited: boolean | null
-          rating: number | null
-          review_text: string | null
-        }
-        Insert: {
-          approved_at?: string | null
-          client_name?: string | null
-          created_at?: string | null
-          id?: string | null
-          is_edited?: boolean | null
-          rating?: number | null
-          review_text?: string | null
-        }
-        Update: {
-          approved_at?: string | null
-          client_name?: string | null
-          created_at?: string | null
-          id?: string | null
-          is_edited?: boolean | null
-          rating?: number | null
-          review_text?: string | null
-        }
-        Relationships: []
-      }
+      [_ in never]: never
     }
     Functions: {
       [_ in never]: never
