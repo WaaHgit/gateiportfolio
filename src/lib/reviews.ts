@@ -2,6 +2,13 @@
 // Public submission + token-based editing go through server functions
 // (src/lib/reviews.functions.ts); this module holds types and admin reads/writes.
 import { supabase } from "@/integrations/supabase/client";
+import {
+  adminDeleteReview,
+  adminEditReview,
+  adminListReviews,
+  adminSetReviewStatus,
+} from "@/lib/reviews.functions";
+
 
 export type ReviewStatus = "pending" | "live" | "archived";
 
