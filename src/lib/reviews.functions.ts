@@ -172,3 +172,99 @@ export const resendEditLink = createServerFn({ method: "POST" })
     }
     return { ok: true as const };
   });
+
+// ---------------------------------------------------------------------------
+// Admin-only review management. Reviewer emails are never exposed to the
+// browser's Data API role; these run server-side after verifying the caller
+// holds the admin role.
+// ---------------------------------------------------------------------------
+import { createMiddleware } from "@tanstack/react-start";
+import { supabase as browserSupabase } from "@/integrations/supabase/client";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+
+const attachAuthHeader = createMiddleware({ type: "function" }).client(async ({ next }) => {
+  const { data } = await browserSupabase.auth.getSession();
+  const token = data.session?.access_token;
+  return next({ headers: token ? { Authorization: `Bearer ${token}` } : {} });
+});
+
+const ADMIN_COLUMNS =
+  "id,email,client_name,rating,review_text,status,edit_count,is_edited,created_at,updated_at,approved_at,archived_at";
+
+async function assertAdmin(context: { supabase: any; userId: string }) {
+  const { data, error } = await context.supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", context.userId)
+    .eq("role", "admin")
+    .maybeSingle();
+  if (error || !data) throw new Error("Not authorized.");
+}
+
+export const adminListReviews = createServerFn({ method: "GET" })
+  .middleware([attachAuthHeader, requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context as any);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("reviews")
+      .select(ADMIN_COLUMNS)
+      .order("created_at", { ascending: false });
+    if (error) throw new Error("Could not load reviews.");
+    return data ?? [];
+  });
+
+export const adminSetReviewStatus = createServerFn({ method: "POST" })
+  .middleware([attachAuthHeader, requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ id: z.string().uuid(), status: z.enum(["pending", "live", "archived"]) }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context as any);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: row, error } = await supabaseAdmin
+      .from("reviews")
+      .update({ status: data.status })
+      .eq("id", data.id)
+      .select(ADMIN_COLUMNS)
+      .maybeSingle();
+    if (error) throw new Error("Could not update this review.");
+    return row;
+  });
+
+export const adminEditReview = createServerFn({ method: "POST" })
+  .middleware([attachAuthHeader, requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        client_name: z.string().trim().min(1).max(120).optional(),
+        review_text: z.string().trim().min(1).max(2000).optional(),
+        rating: z.number().int().min(1).max(5).optional(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context as any);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { id, ...patch } = data;
+    const { data: row, error } = await supabaseAdmin
+      .from("reviews")
+      .update(patch)
+      .eq("id", id)
+      .select(ADMIN_COLUMNS)
+      .maybeSingle();
+    if (error) throw new Error("Could not save changes.");
+    return row;
+  });
+
+export const adminDeleteReview = createServerFn({ method: "POST" })
+  .middleware([attachAuthHeader, requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context as any);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("reviews").delete().eq("id", data.id);
+    if (error) throw new Error("Could not delete this review.");
+    return { ok: true as const };
+  });
