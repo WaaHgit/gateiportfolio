@@ -34,8 +34,6 @@ export type PublicReview = Pick<
 
 export const REVIEW_STATUSES: ReviewStatus[] = ["pending", "live", "archived"];
 
-const ADMIN_COLUMNS =
-  "id,email,client_name,rating,review_text,status,edit_count,is_edited,created_at,updated_at,approved_at,archived_at";
 
 const PUBLIC_COLUMNS = "id,client_name,rating,review_text,is_edited,approved_at,created_at";
 
