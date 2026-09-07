@@ -47,39 +47,23 @@ export async function fetchLiveReviews(): Promise<PublicReview[]> {
 }
 
 export async function fetchAllReviewsForAdmin(): Promise<Review[]> {
-  const { data, error } = await supabase
-    .from("reviews")
-    .select(ADMIN_COLUMNS)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as unknown as Review[];
+  const rows = await adminListReviews({ data: undefined });
+  return (rows ?? []) as unknown as Review[];
 }
 
 export async function updateReviewStatus(id: string, status: ReviewStatus): Promise<Review | null> {
-  const { data, error } = await supabase
-    .from("reviews")
-    .update({ status })
-    .eq("id", id)
-    .select(ADMIN_COLUMNS)
-    .maybeSingle();
-  if (error) throw error;
-  return (data as unknown as Review) ?? null;
+  const row = await adminSetReviewStatus({ data: { id, status } });
+  return (row as unknown as Review) ?? null;
 }
 
 export type ReviewPatch = Partial<Pick<Review, "client_name" | "review_text" | "rating">>;
 
 export async function editReview(id: string, patch: ReviewPatch): Promise<Review | null> {
-  const { data, error } = await supabase
-    .from("reviews")
-    .update(patch)
-    .eq("id", id)
-    .select(ADMIN_COLUMNS)
-    .maybeSingle();
-  if (error) throw error;
-  return (data as unknown as Review) ?? null;
+  const row = await adminEditReview({ data: { id, ...patch } });
+  return (row as unknown as Review) ?? null;
 }
 
 export async function deleteReview(id: string) {
-  const { error } = await supabase.from("reviews").delete().eq("id", id);
-  if (error) throw error;
+  await adminDeleteReview({ data: { id } });
 }
+
