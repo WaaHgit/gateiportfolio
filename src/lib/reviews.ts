@@ -2,6 +2,13 @@
 // Public submission + token-based editing go through server functions
 // (src/lib/reviews.functions.ts); this module holds types and admin reads/writes.
 import { supabase } from "@/integrations/supabase/client";
+import {
+  adminDeleteReview,
+  adminEditReview,
+  adminListReviews,
+  adminSetReviewStatus,
+} from "@/lib/reviews.functions";
+
 
 export type ReviewStatus = "pending" | "live" | "archived";
 
@@ -27,8 +34,6 @@ export type PublicReview = Pick<
 
 export const REVIEW_STATUSES: ReviewStatus[] = ["pending", "live", "archived"];
 
-const ADMIN_COLUMNS =
-  "id,email,client_name,rating,review_text,status,edit_count,is_edited,created_at,updated_at,approved_at,archived_at";
 
 const PUBLIC_COLUMNS = "id,client_name,rating,review_text,is_edited,approved_at,created_at";
 
@@ -47,39 +52,23 @@ export async function fetchLiveReviews(): Promise<PublicReview[]> {
 }
 
 export async function fetchAllReviewsForAdmin(): Promise<Review[]> {
-  const { data, error } = await supabase
-    .from("reviews")
-    .select(ADMIN_COLUMNS)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as unknown as Review[];
+  const rows = await adminListReviews({ data: undefined });
+  return (rows ?? []) as unknown as Review[];
 }
 
 export async function updateReviewStatus(id: string, status: ReviewStatus): Promise<Review | null> {
-  const { data, error } = await supabase
-    .from("reviews")
-    .update({ status })
-    .eq("id", id)
-    .select(ADMIN_COLUMNS)
-    .maybeSingle();
-  if (error) throw error;
-  return (data as unknown as Review) ?? null;
+  const row = await adminSetReviewStatus({ data: { id, status } });
+  return (row as unknown as Review) ?? null;
 }
 
 export type ReviewPatch = Partial<Pick<Review, "client_name" | "review_text" | "rating">>;
 
 export async function editReview(id: string, patch: ReviewPatch): Promise<Review | null> {
-  const { data, error } = await supabase
-    .from("reviews")
-    .update(patch)
-    .eq("id", id)
-    .select(ADMIN_COLUMNS)
-    .maybeSingle();
-  if (error) throw error;
-  return (data as unknown as Review) ?? null;
+  const row = await adminEditReview({ data: { id, ...patch } });
+  return (row as unknown as Review) ?? null;
 }
 
 export async function deleteReview(id: string) {
-  const { error } = await supabase.from("reviews").delete().eq("id", id);
-  if (error) throw error;
+  await adminDeleteReview({ data: { id } });
 }
+
